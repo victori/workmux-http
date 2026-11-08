@@ -1,9 +1,96 @@
 # workmux-http
 
-iPhone-first web dashboard for [workmux](https://github.com)/tmux agent fleets. It
-discovers your existing workmux sessions and operates them through native mobile
-views — agent output, composer, diffs, hunk staging, confirmations — instead of
-embedding the TUI. Served over your VPN; no app login.
+iPhone-first web control plane for your existing
+[workmux](https://github.com/raine/workmux)/tmux coding-agent sessions. Check
+progress, reply to agents, review changes, and manage worktrees from your phone
+without replacing the terminal workflow already running on your development
+machine. Self-hosted over your VPN; no app login.
+
+## What this project is
+
+workmux-http is a **mobile companion to workmux**, not a new agent runtime.
+workmux and tmux remain the source of truth for managed sessions; git provides
+repository state. The dashboard discovers that existing fleet and exposes the
+actions you need when you step away from your desk.
+
+Its focus is the combination of:
+
+- **Existing-session discovery** — use agents already tracked by workmux;
+  adopting them in the dashboard does not require restarting them through a
+  separate launcher. Ordinary, untracked tmux panes are not agent targets.
+- **Phone-native interaction** — responsive browser views for fleet status,
+  captured output, message composition, diffs, and confirmations, rather than
+  squeezing the whole desktop TUI onto a portrait screen. These are web views,
+  not a native iOS app.
+- **Reader and Terminal as explicit modes** — read and reply comfortably by
+  default; enter a real interactive terminal when the task needs terminal
+  fidelity. Switching modes preserves the Reader's draft and scroll position.
+- **Review alongside conversation** — inspect WIP or branch diffs, stage and
+  split hunks, manage staged paths, and use the configured commit workflow
+  without leaving the dashboard.
+- **workmux lifecycle controls** — create, merge, and remove managed worktrees,
+  with exact-target confirmation for consequential actions such as merge,
+  removal, stopping an agent, and pushing commits.
+- **Your machine, your network** — the server runs beside your tools; your
+  phone reaches it through your private network. No hosted relay or separate
+  dashboard account is required.
+
+These are the project's design priorities, not a claim that no other tool
+offers similar features.
+
+## A typical workflow
+
+1. **Start at your desk.** Run your normal workmux/tmux agent workflow on the
+   development machine, then run workmux-http against the same tmux server.
+2. **Check in from your phone.** Connect through your VPN and open the dashboard
+   in the browser. Find the project, worktree, or agent that needs attention.
+3. **Read and steer.** Open Reader, follow recent output, adjust text size or
+   wrapping, and send a message or an explicit key through the composer.
+4. **Review the result.** Inspect diffs, stage the intended changes, and either
+   ask the agent to commit or use a configured direct-commit command. Review
+   the listed commits before confirming a push; confirm lifecycle actions
+   against their exact target.
+5. **Drop into Terminal only when needed.** Use it for interactive terminal
+   work, then return to Reader. Return to your desktop workflow whenever you
+   need broader editing or debugging tools.
+
+## Philosophy and boundaries
+
+**Adapt the interaction, not the agent.** Reader presents captured pane output
+in a browser-friendly surface. Wrapping helps prose fit portrait screens, but
+does not reconstruct structured conversations or reliably reflow TUI tables,
+borders, and cursor-driven layouts. Terminal preserves a terminal grid instead.
+
+**Do not silently rearrange the desktop.** Rotation and keyboard changes do
+not automatically resize the shared terminal. Resizing is explicit and
+confirmed because it affects other clients. Terminal is session-wide, not an
+isolated agent sandbox: its banner identifies the active pane receiving input,
+which may differ from the agent you initially opened.
+
+**Keep the human in consequential decisions.** Confirm the exact target and
+warnings, revalidate before executing, and surface uncertain delivery rather
+than silently resending a message. Unavailable repository data is not treated
+as a clean worktree.
+
+### What it is not
+
+- **Not a replacement for workmux, tmux, or your agents.** It does not supply a
+  model, agent runtime, or universal adapter for every coding tool; agent
+  discovery depends on workmux's managed records.
+- **Not a full mobile IDE or complete workmux TUI clone.** The goal is to
+  supervise, steer, review, and perform focused actions, not reproduce every
+  desktop editor, debugger, or workmux command. See the parity table below for
+  current gaps.
+- **Not a semantic chat client.** Reader captures terminal text, not an agent's
+  structured conversation API; it cannot promise lossless chat reconstruction
+  or perfect reflow of arbitrary terminal output.
+- **Not a general-purpose SSH client or multi-host fleet service.** One server
+  operates against its configured tmux server and local tools; it is not a
+  phone-side SSH connection manager or a built-in aggregator of remote hosts.
+- **Not a public, multi-user service.** There is no app authentication or
+  per-user authorization. Anyone able to reach the allowed endpoint is inside
+  the trust boundary; Host/Origin checks do not replace a VPN or access control.
+  Do not expose it directly to the public internet.
 
 ## Quick start
 
