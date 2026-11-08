@@ -19,6 +19,7 @@ test.describe('pending changes and commit (fixture mode)', () => {
     expect(Array.isArray(diff.untracked)).toBe(true)
     expect(Array.isArray(diff.unstaged)).toBe(true)
     expect(Array.isArray(diff.conflicts)).toBe(true)
+    expect(Array.isArray(diff.staged)).toBe(true)
     expect(typeof diff.hasStaged).toBe('boolean')
     expect(diff.commitCmd).toBe('/usr/bin/true') // claude-kind agents in fixtures
   })
@@ -34,6 +35,23 @@ test.describe('pending changes and commit (fixture mode)', () => {
     expect(await bad.json()).toMatchObject({ ok: false, offenders: ['--force'] })
 
     const empty = await request.post(`/api/worktrees/${encodeURIComponent(id)}/add`, {
+      ...MUTATION,
+      data: { paths: [] },
+    })
+    expect(empty.status()).toBe(400)
+  })
+
+  test('unstage rejects malformed and empty path lists', async ({ request }) => {
+    const dash = await (await request.get('/api/dashboard')).json()
+    const id = dash.worktrees.find((w: { handle: string }) => w.handle === 'feat-timezone').id
+    const bad = await request.post(`/api/worktrees/${encodeURIComponent(id)}/unstage`, {
+      ...MUTATION,
+      data: { paths: ['../escape'] },
+    })
+    expect(bad.status()).toBe(200)
+    expect(await bad.json()).toMatchObject({ ok: false, offenders: ['../escape'] })
+
+    const empty = await request.post(`/api/worktrees/${encodeURIComponent(id)}/unstage`, {
       ...MUTATION,
       data: { paths: [] },
     })

@@ -269,6 +269,17 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     }
   })
 
+  app.post('/api/worktrees/:id/unstage', async (req, reply) => {
+    const { id } = IdParams.parse(req.params)
+    const parsed = AddBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    try {
+      return await management.unstagePending(id, parsed.data.paths)
+    } catch (err) {
+      return mgmtReply(reply, err)
+    }
+  })
+
   app.post('/api/worktrees/:id/commit', async (req, reply) => {
     const { id } = IdParams.parse(req.params)
     const parsed = CommitBody.safeParse(req.body)

@@ -52,6 +52,7 @@ function pendingFrom(status: git.RepoStatus | null) {
   return {
     untracked: status?.untracked ?? [],
     unstaged: status?.unstaged ?? [],
+    staged: status?.staged ?? [],
     conflicts: status?.conflicts ?? [],
     hasStaged: status?.hasStaged ?? false,
     pendingKnown: status !== null,
@@ -123,7 +124,9 @@ export class Management {
       unborn: false,
       snapshotId: snapshotId(`${wt.path}\u0000${mode}\u0000${text}`),
       files,
-      ...(mode === 'wip' ? pendingFrom(status) : { untracked: [], unstaged: [], conflicts: [], hasStaged: status?.hasStaged ?? false, pendingKnown: status !== null }),
+      ...(mode === 'wip'
+        ? pendingFrom(status)
+        : { untracked: [], unstaged: [], staged: [], conflicts: [], hasStaged: status?.hasStaged ?? false, pendingKnown: status !== null }),
       commitCmd: await this.commitCmdForWorktree(targetId),
       truncated: result.truncated,
       observedAt: Date.now(),
@@ -151,6 +154,33 @@ export class Management {
         return { ok: false, message: 'paths are no longer pending; refresh and retry', offenders }
       }
       await git.addPaths(wt.path, paths)
+      this.discovery.invalidateRepo(wt.path)
+      return { ok: true }
+    })
+  }
+
+  /**
+   * Undo staging for paths that are currently staged (worktree content
+   * untouched). Mirrors addPending: same per-target lock, revalidation
+   * against a fresh status, offenders reported instead of fabricated.
+   */
+  async unstagePending(targetId: string, paths: string[]): Promise<AddResult> {
+    const wt = (await this.discovery.worktreeTargets()).get(targetId)
+    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    const malformed = paths.filter(
+      (p) => p.trim() === '' || p.startsWith('-') || p.split('/').includes('..'),
+    )
+    if (malformed.length > 0) {
+      return { ok: false, message: 'invalid paths', offenders: malformed }
+    }
+    return this.locked(targetId, async () => {
+      const status = await git.repoStatus(wt.path)
+      const offenders = paths.filter((p) => !status.staged.includes(p))
+      if (offenders.length > 0) {
+        return { ok: false, message: 'paths are not staged; refresh and retry', offenders }
+      }
+      await git.unstagePaths(wt.path, paths)
+      this.discovery.invalidateRepo(wt.path)
       return { ok: true }
     })
   }

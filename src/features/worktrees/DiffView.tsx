@@ -139,6 +139,23 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
       .finally(() => setAddBusy(false))
   }
 
+  function removePending(paths: string[]): void {
+    setAddBusy(true)
+    setAddNote(null)
+    api
+      .unstagePaths(worktreeId, paths)
+      .then((r) => {
+        setAddNote(
+          r.ok
+            ? `${paths.length} file${paths.length === 1 ? '' : 's'} restored (unstaged)`
+            : `${r.message ?? 'some paths could not be restored'}${r.offenders?.length ? `: ${r.offenders.join(', ')}` : ''}`,
+        )
+        load()
+      })
+      .catch((err: unknown) => setAddNote(err instanceof Error ? err.message : String(err)))
+      .finally(() => setAddBusy(false))
+  }
+
   function runCommit(message: string): void {
     setCommitOp(null)
     setCommitError(null)
@@ -465,14 +482,16 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {!loading && !error && mode === 'wip' && diff && (diff.untracked.length > 0 || diff.unstaged.length > 0 || diff.conflicts.length > 0) && (
+          {!loading && !error && mode === 'wip' && diff && (diff.untracked.length > 0 || diff.unstaged.length > 0 || diff.conflicts.length > 0 || diff.staged.length > 0) && (
             <div className="mb-3 space-y-1">
               <PendingChanges
                 untracked={diff.untracked}
                 unstaged={diff.unstaged}
+                staged={diff.staged}
                 conflicts={diff.conflicts}
                 busy={addBusy}
                 onAdd={addPending}
+                onRemove={removePending}
               />
               {addNote && (
                 <p role="status" aria-live="polite" className="text-[11px] text-fg-muted">

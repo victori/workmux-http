@@ -214,3 +214,36 @@ describe('commitWorktree', () => {
     await expect(management.commitWorktree(wtId(), 'nothing here')).rejects.toThrow(/nothing_to_commit/)
   })
 })
+
+describe('unstagePending', () => {
+  test('should reject malformed paths without touching git', async () => {
+    const r = await management.unstagePending(wtId(), ['-rf', 'x.txt'])
+    expect(r.ok).toBe(false)
+    expect(r.offenders).toEqual(['-rf'])
+  })
+
+  test('should report offenders for paths that are not staged', async () => {
+    git(['reset', '-q']) // everything back to unstaged/untracked
+    const r = await management.unstagePending(wtId(), ['new1.txt'])
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('not staged')
+    expect(r.offenders).toContain('new1.txt')
+  })
+
+  test('should stage then restore with content intact and fresh diff both ways', async () => {
+    git(['reset', '-q'])
+    writeFileSync(path.join(repo, 'new1.txt'), 'n1\nrestored\n') // pending again (modified or untracked)
+    expect((await management.addPending(wtId(), ['new1.txt'])).ok).toBe(true)
+    expect((await management.diff(wtId(), 'wip')).staged).toContain('new1.txt')
+    const r = await management.unstagePending(wtId(), ['new1.txt'])
+    expect(r.ok).toBe(true)
+    const d = await management.diff(wtId(), 'wip')
+    expect(d.staged).not.toContain('new1.txt')
+    expect(d.untracked.includes('new1.txt') || d.unstaged.includes('new1.txt')).toBe(true)
+    expect(readFileSync(path.join(repo, 'new1.txt'), 'utf8')).toBe('n1\nrestored\n')
+  })
+
+  test('should throw TargetNotFoundError for unknown worktrees', async () => {
+    await expect(management.unstagePending('wt_000000000000', ['x.txt'])).rejects.toThrow(TargetNotFoundError)
+  })
+})

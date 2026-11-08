@@ -91,8 +91,11 @@ protection).
   `WORKMUX_<KIND>_COMMIT_CMD` when configured — button disabled when there is
   nothing to commit; otherwise a literal `commit` sent to the owning agent),
   merge behind exact-target confirm.
-  WIP mode additionally lists **pending changes** — untracked and unstaged
-  files, with per-file *Add* and *Add all* (conflicts listed, never auto-added)
+  WIP mode additionally lists **pending changes** — untracked, unstaged, and
+  staged files, with per-file *Add* / *Restore* and *Add all* / *Restore all*
+  (Restore = unstage via `git restore --staged`; file content is always kept;
+  conflicts listed, never auto-added, never restorable here). A file's button
+  flips Add ↔ Restore as its staged state changes.
   — and, when `WORKMUX_<KIND>_COMMIT_CMD` is configured for the worktree's
   agent kind, a **Commit now** box: optional message input (empty = the
   command runs with no message argument) → command runs async via the
@@ -184,7 +187,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 272 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 287 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,

@@ -17,6 +17,7 @@ vi.mock('../../lib/api', async (orig) => ({...(await orig() as object),
     execute: vi.fn(),
     operation: vi.fn(),
     addPaths: vi.fn(),
+    unstagePaths: vi.fn(),
     commit: vi.fn(),
   },
 }))
@@ -55,6 +56,7 @@ const wipDiff: DiffResponse = {
   ],
   untracked: [],
   unstaged: [],
+  staged: [],
   conflicts: [],
   hasStaged: false,
   pendingKnown: true,
@@ -392,5 +394,71 @@ describe('DiffView pending changes and direct commit', () => {
     expect(busyButton).toHaveAttribute('aria-busy', 'true')
     expect(await screen.findByText('committed', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Commit now' })).toBeEnabled()
+  })
+})
+
+describe('staged rows (Restore)', () => {
+  const stagedDiff: DiffResponse = {
+    ...wipDiff,
+    untracked: ['new1.txt'],
+    staged: ['already-staged.txt'],
+    hasStaged: true,
+  }
+
+  it('renders staged file with a Restore button and bulk Restore all', async () => {
+    vi.spyOn(api, 'diff').mockResolvedValue(stagedDiff)
+    render(<DiffView worktreeId="wt_1" label="proj/feat" onClose={() => {}} connection="online" />)
+    expect(await screen.findByText('already-staged.txt')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Restore already-staged\.txt/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Restore all (1)' })).toBeInTheDocument()
+  })
+
+  it('clicking Restore unstages just that file and reports it', async () => {
+    const unstage = vi.spyOn(api, 'unstagePaths').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'diff').mockResolvedValue(stagedDiff)
+    render(<DiffView worktreeId="wt_1" label="proj/feat" onClose={() => {}} connection="online" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Restore already-staged\.txt/ }))
+    expect(unstage).toHaveBeenCalledWith('wt_1', ['already-staged.txt'])
+    expect(await screen.findByRole('status')).toHaveTextContent('1 file restored (unstaged)')
+  })
+
+  it('Restore all passes every staged path', async () => {
+    const unstage = vi.spyOn(api, 'unstagePaths').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'diff').mockResolvedValue({ ...stagedDiff, staged: ['a.txt', 'b.txt'] })
+    render(<DiffView worktreeId="wt_1" label="proj/feat" onClose={() => {}} connection="online" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore all (2)' }))
+    expect(unstage).toHaveBeenCalledWith('wt_1', ['a.txt', 'b.txt'])
+  })
+
+  it('Add flips to Restore after the file becomes staged', async () => {
+    const afterAdd: DiffResponse = {
+      ...wipDiff,
+      untracked: [],
+      staged: ['new1.txt'],
+      hasStaged: true,
+    }
+    vi.spyOn(api, 'diff')
+      .mockResolvedValueOnce({ ...wipDiff, untracked: ['new1.txt'] })
+      .mockResolvedValue(afterAdd)
+    vi.spyOn(api, 'addPaths').mockResolvedValue({ ok: true })
+    render(<DiffView worktreeId="wt_1" label="proj/feat" onClose={() => {}} connection="online" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add new1.txt to commit' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('1 file staged')
+    // reload reports new1.txt staged: same file now offers Restore, not Add
+    expect(await screen.findByRole('button', { name: /Restore new1\.txt/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add new1.txt to commit' })).not.toBeInTheDocument()
+  })
+
+  it('reports offenders when paths are no longer staged', async () => {
+    vi.spyOn(api, 'diff').mockResolvedValue(stagedDiff)
+    vi.spyOn(api, 'unstagePaths').mockResolvedValue({
+      ok: false,
+      message: 'paths are not staged; refresh and retry',
+      offenders: ['already-staged.txt'],
+    })
+    render(<DiffView worktreeId="wt_1" label="proj/feat" onClose={() => {}} connection="online" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Restore already-staged\.txt/ }))
+    expect(await screen.findByRole('status')).toHaveTextContent('not staged')
+    expect(await screen.findByRole('status')).toHaveTextContent('already-staged.txt')
   })
 })

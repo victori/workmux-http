@@ -1,7 +1,7 @@
 # Unstage ("Restore staged") for added files — implementation plan
 
 Date: 2026-11-08
-Status: Planned (awaiting go-ahead; no code changed by this document)
+Status: Implemented 2026-11-08 — typecheck 0, 287/287 vitest, build clean, 27/27 e2e.
 
 ## Goal
 

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { addPaths, hasOrigin, push, repoStatus, runCommit, unpushedCommits } from './git.js'
+import { addPaths, hasOrigin, push, repoStatus, runCommit, unstagePaths, unpushedCommits } from './git.js'
 
 /**
  * Real-git checks for status parsing, path staging, and the commit runner,
@@ -288,5 +288,55 @@ describe('repoStatus filename fidelity (audit F10)', () => {
     } finally {
       rmSync(path.join(repo, 'renamed-dest.txt'), { force: true })
     }
+  })
+})
+
+describe('staged paths and unstage round-trip', () => {
+  let sub: string
+  const gitSub = (args: string[]): string => execFileSync('git', args, { cwd: sub, encoding: 'utf8' })
+
+  beforeAll(() => {
+    sub = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-unstage-'))
+    gitSub(['init', '-q', '-b', 'main'])
+    gitSub(['config', 'user.email', 'test@test.local'])
+    gitSub(['config', 'user.name', 'Test'])
+    gitSub(['config', 'commit.gpgsign', 'false'])
+    writeFileSync(path.join(sub, 'base.txt'), 'x\n')
+    gitSub(['add', 'base.txt'])
+    gitSub(['commit', '-qm', 'init'])
+    writeFileSync(path.join(sub, 'café.txt'), 'unicode\n')
+    writeFileSync(path.join(sub, 'pure-staged.txt'), 'staged only\n')
+    gitSub(['add', 'pure-staged.txt', 'café.txt'])
+    writeFileSync(path.join(sub, 'mm.txt'), 'one\n')
+    gitSub(['add', 'mm.txt'])
+    writeFileSync(path.join(sub, 'mm.txt'), 'one\ntwo\n') // MM
+  })
+
+  afterAll(() => {
+    if (sub) rmSync(sub, { recursive: true, force: true })
+  })
+
+  test('should list staged paths including pure-staged, MM, and unicode names', async () => {
+    const s = await repoStatus(sub)
+    expect(s.staged).toEqual(expect.arrayContaining(['pure-staged.txt', 'café.txt', 'mm.txt']))
+    expect(s.untracked).toEqual([])
+    expect(s.unstaged).toEqual(['mm.txt']) // MM: staged AND unstaged
+  })
+
+  test('should return a previously added file to untracked with content intact', async () => {
+    await unstagePaths(sub, ['café.txt'])
+    const s = await repoStatus(sub)
+    expect(s.staged).not.toContain('café.txt')
+    expect(s.untracked).toContain('café.txt')
+    expect(readFileSync(path.join(sub, 'café.txt'), 'utf8')).toBe('unicode\n')
+  })
+
+  test('should drop only the index side of an added-then-edited file on unstage', async () => {
+    await unstagePaths(sub, ['mm.txt'])
+    const s = await repoStatus(sub)
+    expect(s.staged).not.toContain('mm.txt')
+    // mm.txt is not in HEAD, so unstage falls back to untracked — content kept
+    expect(s.untracked).toContain('mm.txt')
+    expect(readFileSync(path.join(sub, 'mm.txt'), 'utf8')).toBe('one\ntwo\n')
   })
 })

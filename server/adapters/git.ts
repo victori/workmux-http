@@ -17,6 +17,8 @@ export interface RepoStatus {
   untracked: string[]
   /** Tracked files with worktree-side changes not fully staged. */
   unstaged: string[]
+  /** Paths with index changes vs HEAD (staged; conflicts excluded). */
+  staged: string[]
   /** Unmerged paths. */
   conflicts: string[]
   /** Distinct porcelain file entries (each path counts once). */
@@ -64,6 +66,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     hasUpstream: false,
     untracked: [],
     unstaged: [],
+    staged: [],
     conflicts: [],
     pendingChanges: 0,
   }
@@ -90,7 +93,10 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
       if (rec.startsWith('2 ')) i += 1
       status.pendingChanges += 1
       const { xy, path } = entry
-      if (xy[0] !== '.') status.hasStaged = true
+      if (xy[0] !== '.') {
+        status.hasStaged = true
+        if (!rec.startsWith('u ')) status.staged.push(path)
+      }
       if (xy[1] !== '.') status.hasUnstaged = true
       if (rec.startsWith('u ')) {
         status.hasStaged = true
@@ -157,6 +163,14 @@ export async function addPaths(cwd: string, paths: string[]): Promise<void> {
   const res = await run(['git', 'add', '--', ...paths], { cwd })
   if (res.code !== 0) {
     throw new Error(`git add failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
+  }
+}
+
+/** Undo staging for exact paths (worktree content untouched). */
+export async function unstagePaths(cwd: string, paths: string[]): Promise<void> {
+  const res = await run(['git', 'restore', '--staged', '--', ...paths], { cwd })
+  if (res.code !== 0) {
+    throw new Error(`git restore --staged failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
   }
 }
 

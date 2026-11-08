@@ -173,6 +173,8 @@ export interface DiffResponse {
   untracked: string[]
   /** Tracked files with worktree-side changes not fully staged. */
   unstaged: string[]
+  /** Paths with index changes vs HEAD (staged; conflicts excluded). */
+  staged: string[]
   /** Unmerged paths; addable only after conflict resolution. */
   conflicts: string[]
   hasStaged: boolean

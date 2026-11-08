@@ -613,3 +613,24 @@ original requirements above remain in force unless noted.
   deliberately keep no deadline (aborting a possibly-applied mutation would
   fabricate an unknown-delivery the server never reported).
 - +18 tests = 272 vitest exit 0; build clean; 26 e2e; typecheck 0.
+
+### Restore staged (unstage) for added files (2026-11-08)
+- Pending-changes section now lists STAGED paths too (`DiffResponse.staged`,
+  `RepoStatus.staged` from porcelain v2 `xy[0] !== '.'`, conflicts excluded).
+  A file's button flips Add ↔ Restore as its staged state changes; bulk
+  *Restore all (N)* mirrors *Add all*. Restore = `git restore --staged --`
+  (worktree content never touched).
+- New sibling endpoint `POST /api/worktrees/:id/unstage` reusing AddBody +
+  AddResult (audited `/add` contract unchanged; no new error codes).
+  `unstagePending` mirrors `addPending`: same per-target lock, revalidates
+  paths are still staged (offenders otherwise), conflicts never restorable.
+- Bonus fix: `addPending` now calls `discovery.invalidateRepo()` (hunkAction
+  already did) — pending badges refresh immediately after staging instead of
+  waiting out the 2 s TTL; `unstagePending` invalidates too.
+- Deviation from the planning doc: no `UnstageRequest` shared type added —
+  the existing `AddRequest` is unused dead code; a mirror would add weight.
+- Verification delta: +15 vitest (287 total: adapter staged-list + unstage
+  round-trip incl. unicode/added-then-edited, service happy/offenders/
+  malformed/unknown-target, route header+400+404, jsdom Restore row/Restore
+  all/Add→Restore flip/offender note) +1 e2e (unstage validation contract,
+  27 total); typecheck and build clean.

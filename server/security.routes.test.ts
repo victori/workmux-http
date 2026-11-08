@@ -75,3 +75,38 @@ describe('validation error contract (F12)', () => {
     expect(String(res.json().detail)).toContain('force')
   })
 })
+
+describe('unstage route', () => {
+  it('rejects /unstage without the mutation header', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/worktrees/wt_000000000000/unstage',
+      headers: { host: 'localhost', 'content-type': 'application/json' },
+      payload: { paths: ['x.txt'] },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().error).toBe('missing_request_header')
+  })
+
+  it('rejects an empty paths list with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/worktrees/wt_000000000000/unstage',
+      headers: { host: 'localhost', ...MUT },
+      payload: { paths: [] },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('invalid_request')
+  })
+
+  it('returns 404 target_not_found for an unknown worktree', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/worktrees/wt_000000000000/unstage',
+      headers: { host: 'localhost', ...MUT },
+      payload: { paths: ['x.txt'] },
+    })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().error).toBe('target_not_found')
+  })
+})

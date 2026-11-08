@@ -103,6 +103,8 @@ export const api = {
     post<DeliveryResult>(`/api/worktrees/${encodeId(worktreeId)}/hunk-comments`, req),
   addPaths: (worktreeId: string, paths: string[]) =>
     post<AddResult>(`/api/worktrees/${encodeId(worktreeId)}/add`, { paths }),
+  unstagePaths: (worktreeId: string, paths: string[]) =>
+    post<AddResult>(`/api/worktrees/${encodeId(worktreeId)}/unstage`, { paths }),
   commit: (worktreeId: string, message?: string) =>
     post<CommitAccepted>(`/api/worktrees/${encodeId(worktreeId)}/commit`, { message }),
   createWorktree: (req: CreateWorktreeRequest) => post<OperationView>('/api/worktrees', req),
