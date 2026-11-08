@@ -417,3 +417,23 @@ original requirements above remain in force unless noted.
 - Follow-up 4 (user): default `WORKMUX_COMMIT_TIMEOUT_MS` raised
   120000 → 300000 (opencode-commit model runs exceed 2 min); supersedes
   the "default 120 s" figure in the entry above.
+- Follow-up 5 (user symptom + convention): `$@` → `{{COMMIT_MSG}}`
+  whole-token placeholder (clean cutover; wrapper recipe
+  `zsh -ic '… "$@"' _ {{COMMIT_MSG}}`). exec.run rewritten execFile→
+  spawn(detached)+kill(-pid) group kill — execFile drops `detached` and
+  timeouts orphaned grandchildren (silent late commits). 193 vitest,
+  typecheck+build clean; live proof: 3 s timeout kills zsh+sleep tree at
+  3006 ms, exit 124, no survivors.
+- Follow-up 6 (user symptom): exec.run now always closes child stdin
+  (EOF). Previously stdin stayed open when no input was given, so
+  stdin-reading CLIs (`opencode run`) blocked forever — the "no OMLX
+  activity / command never invoked" symptom. +5 exec.test.ts = 198
+  vitest; live proofs: direct `opencode run` exit 0 @23.5 s; server
+  cat-probe done @60 ms.
+- Follow-up 7 (user ergonomics): {{COMMIT_MSG}} now also substitutes as a
+  SUBSTRING inside shell-wrapper commands, context-escaped (dq: backslash
+  ` \ " $ ` `; sq: split-and-requote; bare: single-quote wrap); non-shell
+  commands raw substring; whole-token unchanged. run.sh recipe simplifies
+  to `zsh -ic 'opencode-commit -a "{{COMMIT_MSG}}"'`. +6 tests = 204
+  vitest; live injection proof inert (payload with `"; touch …; echo "`
+  arrived byte-identical, no side effects).

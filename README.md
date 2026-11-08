@@ -41,7 +41,7 @@ default tmux server already running your sessions (or set
 | `WORKMUX_TMUX_SOCKET` | auto (`tmux display-message -p '#{socket_path}'`) | Explicit tmux socket path. |
 | `WORKMUX_REPOS` | auto-discovered from workmux | Comma-separated project roots (informational). |
 | `WORKMUX_HTTP_FIXTURES` | unset | Directory with `list-all.json`, `status-all.json`, `output-<paneId>.txt` → fixture mode (no tmux/workmux needed; sends are simulated). |
-| `WORKMUX_<KIND>_COMMIT_CMD` | **unset = off** | **Default off:** with none set, every worktree keeps the existing agent-commit path (send `commit` to the agent). Direct-commit command for agent kind `<KIND>`: `WORKMUX_OMP_COMMIT_CMD` / `WORKMUX_OPENCODE_COMMIT_CMD` (interchangeable — workmux reports opencode as `omp`), `WORKMUX_CLAUDE_COMMIT_CMD`, `WORKMUX_CODEX_COMMIT_CMD`, or any other kind uppercased with non-alphanumerics → `_`. When set for a worktree's agent kind, the diff view's Commit becomes a message box running this command in the worktree (the commit message is passed as one argv element: `$@` is substituted where present, appended otherwise). The command must be an executable on the server's PATH — spawned with **no shell**, so shell functions/aliases (`.zshrc`) never resolve; env vars the command needs must be exported to the server process. To reference a zsh function anyway: `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"\$@\"' _"` (interactive zsh loads `~/.zshrc`; `_` is `$0`, the message lands as `$@`). |
+| `WORKMUX_<KIND>_COMMIT_CMD` | **unset = off** | **Default off:** with none set, every worktree keeps the existing agent-commit path (send `commit` to the agent). Direct-commit command for agent kind `<KIND>`: `WORKMUX_OMP_COMMIT_CMD` / `WORKMUX_OPENCODE_COMMIT_CMD` (interchangeable — workmux reports opencode as `omp`), `WORKMUX_CLAUDE_COMMIT_CMD`, `WORKMUX_CODEX_COMMIT_CMD`, or any other kind uppercased with non-alphanumerics → `_`. When set for a worktree's agent kind, the diff view's Commit becomes a message box running this command in the worktree (the commit message replaces the `{{COMMIT_MSG}}` token where present, appended otherwise; whole-token is safest, substring works inside shell wrappers with context escaping). The command must be an executable on the server's PATH — spawned with **no shell**, so shell functions/aliases (`.zshrc`) never resolve; env vars the command needs must be exported to the server process. To reference a zsh function anyway: `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"` (interactive zsh loads `~/.zshrc`; the placeholder is substituted inside the `-c` string, shell-escaped per quoting context). |
 | `WORKMUX_COMMIT_TIMEOUT_MS` | `300000` | Timeout for the direct-commit command (AI commit tools can run minutes). |
 
 ### VPN access model
@@ -91,9 +91,10 @@ protection).
   be an **executable resolvable by the server process** — it is spawned
   directly, with no shell, so aliases and functions from your `.zshrc` are
   invisible to it. Two ways to use zsh functions anyway:
-  - wrap the command in an interactive zsh (loads `~/.zshrc`; the `_` is
-    `$0`, the appended message becomes `$@` inside the quoted string):
-    `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"\$@\"' _"`
+  - wrap the command in an interactive zsh (loads `~/.zshrc`; the
+    `{{COMMIT_MSG}}` placeholder sits inside the quoted `-c` string and is
+    substituted with shell-context escaping):
+    `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"`
   - or generate a standalone script from the function once:
     `{ echo '#!/bin/zsh'; functions opencode-commit; echo 'opencode-commit "$@"'; } > ~/.local/bin/opencode-commit && chmod +x ~/.local/bin/opencode-commit`
 - **Destructive actions** (merge, remove worktree, stop agent) always
@@ -143,7 +144,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 190 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 204 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, and the configurable commit runner).
 - `npx playwright test` — 22 e2e tests at iPhone 13 viewport against the

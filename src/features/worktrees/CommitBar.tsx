@@ -1,5 +1,5 @@
 export interface CommitBarProps {
-  /** Operator-configured command, e.g. `opencode-commit -a` or `git commit -m $@`. */
+  /** Operator-configured command, e.g. `opencode-commit -a` or `git commit -m {{COMMIT_MSG}}`. */
   commitCmd: string
   busy: boolean
   /** Failure surfaced inline under the bar (null while idle/running). */
@@ -29,7 +29,7 @@ function Spinner() {
  * doesn't succeed.
  */
 export function CommitBar({ commitCmd, busy, error, onCommit }: CommitBarProps) {
-  const hasPlaceholder = commitCmd.includes('$@')
+  const hasPlaceholder = commitCmd.includes('{{COMMIT_MSG}}')
   const submit = (el: HTMLTextAreaElement | null) => {
     if (!el || busy) return
     onCommit(el.value.trim())
@@ -43,7 +43,7 @@ export function CommitBar({ commitCmd, busy, error, onCommit }: CommitBarProps) 
           <textarea
             rows={1}
             maxLength={4096}
-            placeholder={`Commit message → ${commitCmd}${hasPlaceholder ? '' : ' "$@"'}`}
+            placeholder={`Commit message → ${commitCmd}${hasPlaceholder ? '' : ' {{COMMIT_MSG}}'}`}
             aria-label="Commit message"
             className="block min-h-[44px] w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-base leading-snug text-fg placeholder:text-fg-muted/60 md:text-sm"
             onKeyDown={(e) => {

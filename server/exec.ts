@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { BOUNDS } from './config.js'
 
 export interface RunResult {
@@ -35,7 +35,16 @@ function runError(err: unknown): RunError {
   return wrapped
 }
 
-/** Run argv directly (no shell), bounded by time and output size. */
+/**
+ * Run argv directly (no shell), bounded by time and output size.
+ *
+ * The child is spawned `detached` (new session/process group) so the
+ * timeout kill `kill(-pid)` reaches the WHOLE tree: wrapper commands
+ * (e.g. `zsh -ic '…'`) spawn grandchildren that would otherwise be
+ * orphaned and keep running — a "failed" commit silently completing in
+ * the background, or a grandchild holding our stdout pipe open past the
+ * timeout.
+ */
 export function run(
   argv: string[],
   opts: { cwd?: string; timeoutMs?: number; input?: string } = {},
@@ -43,30 +52,69 @@ export function run(
   const [cmd, ...args] = argv
   if (!cmd) return Promise.reject(new Error('empty argv'))
   const { promise, resolve, reject } = Promise.withResolvers<RunResult>()
-  const child = execFile(
-    cmd,
-    args,
-    {
-      cwd: opts.cwd,
-      timeout: opts.timeoutMs ?? BOUNDS.subprocessTimeoutMs,
-      maxBuffer: BOUNDS.maxSubprocessOutputBytes,
-      killSignal: 'SIGKILL',
-      env: process.env,
-    },
-    (err, stdout, stderr) => {
-      if (err && runError(err).isSpawnFailure) {
-        reject(runError(err))
-        return
+  const timeoutMs = opts.timeoutMs ?? BOUNDS.subprocessTimeoutMs
+  const child = spawn(cmd, args, {
+    cwd: opts.cwd,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
+  })
+
+  let out = ''
+  let errOut = ''
+  let truncated = false
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (d: string) => {
+    out += d
+    if (out.length >= BOUNDS.maxSubprocessOutputBytes) {
+      out = out.slice(0, BOUNDS.maxSubprocessOutputBytes)
+      truncated = true
+    }
+  })
+  child.stderr.on('data', (d: string) => {
+    errOut += d
+    if (errOut.length >= BOUNDS.maxSubprocessOutputBytes) {
+      errOut = errOut.slice(0, BOUNDS.maxSubprocessOutputBytes)
+      truncated = true
+    }
+  })
+  child.stdin?.on('error', () => {
+    /* EPIPE when the child exits before consuming input */
+  })
+
+  let killed = false
+  const timer = setTimeout(() => {
+    killed = true
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL')
+      else child.kill('SIGKILL')
+    } catch {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* already dead */
       }
-      const truncated =
-        stdout.length >= BOUNDS.maxSubprocessOutputBytes ||
-        stderr.length >= BOUNDS.maxSubprocessOutputBytes
-      const code = err ? (runError(err).code ?? (runError(err).killed ? 124 : 1)) : 0
-      resolve({ code, stdout, stderr, truncated })
-    },
-  )
-  if (opts.input !== undefined && child.stdin) {
-    child.stdin.end(opts.input)
-  }
+    }
+  }, timeoutMs)
+
+  // Always deliver EOF on stdin: CLIs that opportunistically read piped
+  // input (e.g. `opencode run`) otherwise block forever waiting for data
+  // that never comes, looking like "the command was never invoked".
+  child.stdin?.end(opts.input ?? '')
+
+  child.on('error', (err) => {
+    clearTimeout(timer)
+    reject(runError(err))
+  })
+  child.on('close', (code, signal) => {
+    clearTimeout(timer)
+    resolve({
+      code: code ?? (killed ? 124 : signal ? 1 : 0),
+      stdout: out,
+      stderr: errOut,
+      truncated,
+    })
+  })
   return promise
 }

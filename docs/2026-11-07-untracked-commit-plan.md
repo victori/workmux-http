@@ -226,3 +226,35 @@ untracked files; no commits.
   buildCommitArgv drops a standalone `$@`/`"$@"` token and appends nothing;
   zod `.optional()` (no min(1)); client no longer silently no-ops on empty.
   Live proof: POST {} → done, stub saw `ARGS: 1 | -a`.
+- Message placeholder convention changed `$@` → `{{COMMIT_MSG}}` (user):
+  whole-token substitution only (quoted form equal after tokenizing);
+  `$@` is now inert text. zsh wrapper recipe becomes
+  `zsh -ic 'opencode-commit -a "$@"' _ {{COMMIT_MSG}}` (inner "$@" is
+  zsh's own; the placeholder is the server-side arg slot).
+- Timeout kill now reaches the whole process group: exec.run switched from
+  execFile (which silently DROPS `detached`; kill(-pid) ESRCH'd, orphaning
+  grandchildren that held the stdout pipe open past the timeout — the
+  "timed out but maybe completed anyway" symptom) to spawn with
+  `detached: true` + own timer + `kill(-pid, SIGKILL)`, manual output
+  bounds (truncate + flag instead of ERR_MAXBUFFER abort). Proof: wrapper
+  `zsh -ic 'sleep 30; …'` with 3 s timeout → failed exit 124 at 3006 ms,
+  grandchild dead, post-sleep file never written.
+- Stdin EOF (root cause of "commit button shows no OMLX activity"):
+  exec.run left the child's stdin pipe OPEN when no input was supplied —
+  `opencode run` waits for piped input and blocked forever (looked like
+  the command never ran; only the timeout ever ended it). run() now
+  always ends stdin (input ?? ''). Proofs: direct spawn of
+  `opencode run … -- "reply pong"` → exit 0 in 23.5 s (vs 60 s hang);
+  server probe `zsh -ic 'cat …'` → done in 60 ms; +5 exec.test.ts
+  (stdin EOF, explicit input, group-kill, spawn failure, truncation)
+  = 198 vitest.
+- Substring substitution (user form `zsh -ic 'tool -a "{{COMMIT_MSG}}"'`):
+  whole-token remains safest/preferred; when the command basename is a
+  shell (sh/bash/zsh/dash/ksh), substring occurrences are escaped for
+  their quoting context — dq regions backslash-escape ` \ " $ ` `,
+  sq regions split-and-requote, bare occurrences single-quote-wrap.
+  Non-shell commands: raw substring (no shell in between). Empty message:
+  whole-token dropped; dq leaves `""` (functions guard blank context).
+  Live proof: printf variant through the server with payload
+  `x"; touch /tmp/pwn; echo "` → done, file byte-identical, /tmp/pwn
+  never created. +6 tests = 204 vitest.
