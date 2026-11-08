@@ -93,7 +93,10 @@ protection).
   agent kind, a **Commit now** box: optional message input (empty = the
   command runs with no message argument) → command runs async via the
   operations registry (spinner while it runs, failure surfaced inline under the
-  bar; commit contents = exactly what the git index holds). The command must
+  bar; commit contents = exactly what the git index holds). The button is
+  disabled when the worktree has nothing to commit (and the server rejects
+  `nothing_to_commit` for stale views); it stays enabled when git status
+  can't be read, since unknown ≠ clean. The command must
   be an **executable resolvable by the server process** — it is spawned
   directly, with no shell, so aliases and functions from your `.zshrc` are
   invisible to it. Two ways to use zsh functions anyway:
@@ -168,7 +171,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 243 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 247 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,

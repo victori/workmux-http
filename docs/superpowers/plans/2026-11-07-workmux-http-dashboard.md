@@ -541,3 +541,16 @@ original requirements above remain in force unless noted.
   (content-addressed, safe forever).
 - +3 contract tests (document no-store, fallback no-store, asset
   immutable) = 243 vitest; headers verified live via curl.
+
+### Commit-now disabled when clean (2026-11-08)
+- CommitBar takes `hasChanges`; the button (and submit path) disable with a
+  "Nothing to commit" tooltip unless the diff reports staged, unstaged,
+  untracked, or conflicted files.
+- DiffResponse gains `pendingKnown` (false when git status could not be
+  read): the UI fails OPEN when status is unknown — a degraded status read
+  must not lock out committing; the server is the arbiter there.
+- Server defense for stale views: commitWorktree rejects
+  `nothing_to_commit` when a readable repo status shows zero pending
+  changes (unborn repos exempt).
+- +4 tests (disabled-when-clean, staged-only, degraded fail-open, server
+  reject) = 247 vitest; live diff carries pendingKnown.

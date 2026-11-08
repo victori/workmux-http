@@ -176,6 +176,8 @@ export interface DiffResponse {
   /** Unmerged paths; addable only after conflict resolution. */
   conflicts: string[]
   hasStaged: boolean
+  /** False when git status could not be read; pending lists are then unknown, not empty. */
+  pendingKnown: boolean
   /** Resolved commit command for this worktree's agent kind; null keeps agent commit. */
   commitCmd: string | null
   truncated: boolean

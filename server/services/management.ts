@@ -54,6 +54,7 @@ function pendingFrom(status: git.RepoStatus | null) {
     unstaged: status?.unstaged ?? [],
     conflicts: status?.conflicts ?? [],
     hasStaged: status?.hasStaged ?? false,
+    pendingKnown: status !== null,
   }
 }
 
@@ -122,7 +123,7 @@ export class Management {
       unborn: false,
       snapshotId: snapshotId(`${wt.path}\u0000${mode}\u0000${text}`),
       files,
-      ...(mode === 'wip' ? pendingFrom(status) : { untracked: [], unstaged: [], conflicts: [], hasStaged: status?.hasStaged ?? false }),
+      ...(mode === 'wip' ? pendingFrom(status) : { untracked: [], unstaged: [], conflicts: [], hasStaged: status?.hasStaged ?? false, pendingKnown: status !== null }),
       commitCmd: await this.commitCmdForWorktree(targetId),
       truncated: result.truncated,
       observedAt: Date.now(),
@@ -162,6 +163,10 @@ export class Management {
     if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
     const cmd = await this.commitCmdForWorktree(targetId)
     if (!cmd) throw new BadRequestError('commit_cmd_not_configured')
+    const st = await git.repoStatus(wt.path).catch(() => null)
+    if (st && st.pendingChanges === 0 && !st.unborn) {
+      throw new BadRequestError('nothing_to_commit: worktree has no staged, unstaged, or untracked changes')
+    }
     const argv = buildCommitArgv(cmd, message)
     return this.operations.start('commit', wt.handle, async () => {
       const r = await git.runCommit(wt.path, argv, this.cfg.commitTimeoutMs)

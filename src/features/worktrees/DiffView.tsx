@@ -567,6 +567,13 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
           <CommitBar
             commitCmd={diff.commitCmd}
             busy={commitBusy || commitOp?.state === 'running'}
+            hasChanges={
+              !diff.pendingKnown ||
+              diff.hasStaged ||
+              diff.untracked.length > 0 ||
+              diff.unstaged.length > 0 ||
+              diff.conflicts.length > 0
+            }
             error={commitError}
             onCommit={runCommit}
           />

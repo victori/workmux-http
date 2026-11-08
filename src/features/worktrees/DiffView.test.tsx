@@ -57,6 +57,7 @@ const wipDiff: DiffResponse = {
   unstaged: [],
   conflicts: [],
   hasStaged: false,
+  pendingKnown: true,
   commitCmd: null,
   truncated: false,
   observedAt: 1,
@@ -302,6 +303,38 @@ describe('DiffView pending changes and direct commit', () => {
     renderView()
     expect(await screen.findByRole('button', { name: 'Commit' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Commit now' })).not.toBeInTheDocument()
+  })
+
+  it('disables Commit now when the worktree has no changes', async () => {
+    mockApi.diff.mockResolvedValue({ ...pendingDiff, untracked: [], unstaged: [], conflicts: [], hasStaged: false })
+    renderView()
+    await screen.findByRole('textbox', { name: 'Commit message' })
+    const btn = screen.getByRole('button', { name: 'Commit now' })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute('title', expect.stringContaining('Nothing to commit'))
+    fireEvent.click(btn)
+    expect(mockApi.commit).not.toHaveBeenCalled()
+  })
+
+  it('enables Commit now when only staged changes exist', async () => {
+    mockApi.diff.mockResolvedValue({ ...pendingDiff, untracked: [], unstaged: [], conflicts: [], hasStaged: true })
+    renderView()
+    await screen.findByRole('textbox', { name: 'Commit message' })
+    expect(screen.getByRole('button', { name: 'Commit now' })).toBeEnabled()
+  })
+
+  it('keeps Commit now enabled when git status is unknown (degraded)', async () => {
+    mockApi.diff.mockResolvedValue({
+      ...pendingDiff,
+      untracked: [],
+      unstaged: [],
+      conflicts: [],
+      hasStaged: false,
+      pendingKnown: false,
+    })
+    renderView()
+    await screen.findByRole('textbox', { name: 'Commit message' })
+    expect(screen.getByRole('button', { name: 'Commit now' })).toBeEnabled()
   })
 
   it('surfaces a failed commit operation with its error', async () => {

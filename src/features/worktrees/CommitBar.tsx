@@ -2,6 +2,8 @@ export interface CommitBarProps {
   /** Operator-configured command, e.g. `opencode-commit -a` or `git commit -m {{COMMIT_MSG}}`. */
   commitCmd: string
   busy: boolean
+  /** False when the worktree has nothing to commit (staged/unstaged/untracked/conflicts). */
+  hasChanges: boolean
   /** Failure surfaced inline under the bar (null while idle/running). */
   error: string | null
   onCommit: (message: string) => void
@@ -28,10 +30,10 @@ function Spinner() {
  * Shows a spinner while the command runs and the failure inline when it
  * doesn't succeed.
  */
-export function CommitBar({ commitCmd, busy, error, onCommit }: CommitBarProps) {
+export function CommitBar({ commitCmd, busy, hasChanges, error, onCommit }: CommitBarProps) {
   const hasPlaceholder = commitCmd.includes('{{COMMIT_MSG}}')
   const submit = (el: HTMLTextAreaElement | null) => {
-    if (!el || busy) return
+    if (!el || busy || !hasChanges) return
     onCommit(el.value.trim())
     el.value = ''
   }
@@ -54,8 +56,9 @@ export function CommitBar({ commitCmd, busy, error, onCommit }: CommitBarProps) 
         </label>
         <button
           onClick={() => submit(document.getElementById('wmhttp-commit-message') as HTMLTextAreaElement | null)}
-          disabled={busy}
+          disabled={busy || !hasChanges}
           aria-busy={busy}
+          title={!hasChanges && !busy ? 'Nothing to commit — no staged, unstaged, or untracked changes' : undefined}
           className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg disabled:opacity-60"
         >
           {busy && <Spinner />}

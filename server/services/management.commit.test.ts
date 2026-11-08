@@ -207,4 +207,10 @@ describe('commitWorktree', () => {
     const mgmt2 = new Management(cfg2, idleTmux, new Workmux(), discovery2, new Operations())
     await expect(mgmt2.commitWorktree(wtId(), 'msg')).rejects.toBeInstanceOf(BadRequestError)
   })
+
+  test('should reject commit when the worktree is clean', async () => {
+    git(['add', '-A'])
+    git(['commit', '-qm', 'make repo clean'])
+    await expect(management.commitWorktree(wtId(), 'nothing here')).rejects.toThrow(/nothing_to_commit/)
+  })
 })
