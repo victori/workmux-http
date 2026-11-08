@@ -108,10 +108,13 @@ Design decisions worth knowing:
   a git repository (verified against workmux 0.1.280).
 - `AgentView.git === null` means *unavailable*, never *clean*. Missing data is
   shown as unavailable, never fabricated.
+- The "Data may be outdated" banner reflects source/polling health only.
+  Idle agents (past the stale threshold) get per-agent Stale badges — they
+  do not claim the dashboard data itself is outdated.
 
 ## Verification
 
-- `npm run test` — 100 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 110 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket + real-git hunk staging).
 - `npx playwright test` — 11 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,

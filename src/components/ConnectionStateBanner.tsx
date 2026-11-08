@@ -2,19 +2,19 @@ import type { ConnectionState } from '../hooks/useDashboard'
 
 export interface ConnectionStateBannerProps {
   connection: ConnectionState
-  stale: boolean
   error: string | null
   onRetry: () => void
 }
 
 /**
- * Persistent status strip. Online+fresh renders nothing; connecting shows a
- * loading hint; offline and stale are color-coded with a Retry action.
+ * Persistent status strip. Online renders nothing (idle agents are badges,
+ * not a data-freshness warning); connecting shows a loading hint; offline
+ * and stale (source or polling failures) are color-coded with Retry.
  */
-export function ConnectionStateBanner({ connection, stale, error, onRetry }: ConnectionStateBannerProps) {
-  if (connection === 'online' && !stale) return null
+export function ConnectionStateBanner({ connection, error, onRetry }: ConnectionStateBannerProps) {
+  if (connection === 'online') return null
 
-  const isStale = connection === 'stale' || stale
+  const isStale = connection === 'stale'
   const isOffline = connection === 'offline'
   const isLoading = connection === 'connecting' && !error
 

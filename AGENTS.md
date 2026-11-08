@@ -125,6 +125,9 @@ it the default in code or docs.
   tap targets (global CSS), text inputs `text-base md:text-sm` (iOS zoom
   guard), `max-h-[85dvh]` sheets, `md:` breakpoint = iPad layout.
 - Pane ids in URLs: `encodeURIComponent` (`%286` → `%25286` on the wire).
+- Data freshness = `deriveConnection(snapshot, error, lastOkAt)` (source
+  health + polling) — NEVER `snapshot.stale` (that includes idle agents;
+  those render as per-agent Stale badges only).
 
 ## Important Files
 
@@ -175,7 +178,7 @@ it the default in code or docs.
 
 - **Vitest 3** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  100 tests green baseline.
+  110 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

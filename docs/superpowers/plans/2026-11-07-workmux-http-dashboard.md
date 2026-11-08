@@ -266,3 +266,15 @@ original requirements above remain in force unless noted.
 - Still outstanding from the original acceptance list: physical
   iPhone/iPad Safari checks (headless iPhone 13 viewport only) — all other
   acceptance criteria exercised; see README "Verification" and "Limits".
+
+### Banner semantics fix (2026-11-07, post-screenshot report)
+- "Data may be outdated" previously fired whenever `snapshot.stale` was
+  true — which includes agents merely idle past `staleAfterSecs`. Idle
+  agents are attention badges, not stale data.
+- Connection state now derives from source health + polling only
+  (`deriveConnection` in `useDashboard.ts`): fetch error or all sources
+  dead → offline; some sources failed or polling stalled → stale;
+  otherwise online. `ConnectionStateBanner` lost its `stale` prop.
+- Verification: +6 unit tests (`deriveConnection`, incl. idle-stale →
+  online regression) = 110; e2e fixture-mode spec asserts the banner is
+  absent despite frozen fixture timestamps.

@@ -15,6 +15,26 @@ export interface DashboardState {
 const POLL_MS = 2000
 
 /**
+ * Data freshness from source health + polling only. Per-agent staleness
+ * (idle > staleAfterSecs) is an attention signal rendered as badges — it
+ * must NOT claim the dashboard data itself is outdated.
+ */
+export function deriveConnection(
+  snapshot: DashboardSnapshot | null,
+  error: string | null,
+  lastOkAt: number | null,
+): ConnectionState {
+  if (!snapshot) return error ? 'offline' : 'connecting'
+  if (error) return 'offline'
+  const statuses = Object.values(snapshot.sources)
+  const failed = statuses.filter((s) => !s.ok).length
+  if (failed === statuses.length) return 'offline'
+  if (failed > 0) return 'stale'
+  if (lastOkAt && Date.now() - lastOkAt > POLL_MS * 5) return 'stale'
+  return 'online'
+}
+
+/**
  * Polls core data every 2s while the tab is visible; pauses when hidden and
  * fetches fresh on return, foregrounding, or network recovery. Overlapping
  * refreshes are collapsed by the server-side TTL cache.
@@ -63,13 +83,7 @@ export function useDashboard(): DashboardState {
     }
   }, [refresh])
 
-  const connection: ConnectionState = (() => {
-    if (!snapshot) return error ? 'offline' : 'connecting'
-    const sourcesFailed = Object.values(snapshot.sources).some((s) => !s.ok)
-    if (error || sourcesFailed) return snapshot.stale ? 'stale' : 'offline'
-    if (lastOkAt && Date.now() - lastOkAt > POLL_MS * 5) return 'stale'
-    return 'online'
-  })()
+  const connection = deriveConnection(snapshot, error, lastOkAt)
 
   return { snapshot, connection, lastOkAt, error, refresh }
 }

@@ -4,6 +4,8 @@ test.describe('managed dashboard (fixture mode)', () => {
   test('should list managed agents with status labels and open worktrees tab', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByText('sample-app-alpha').first()).toBeVisible()
+    // Healthy sources must not claim outdated data, even with idle agents.
+    await expect(page.getByText('Data may be outdated')).toHaveCount(0)
     await expect(page.getByText('feat-timezone').first()).toBeVisible()
     await expect(page.getByText('Waiting', { exact: false }).first()).toBeVisible()
 

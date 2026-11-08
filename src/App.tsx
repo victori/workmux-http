@@ -150,7 +150,6 @@ export default function App() {
       <main className="flex min-h-0 flex-1 flex-col">
         <ConnectionStateBanner
           connection={dash.connection}
-          stale={dash.snapshot?.stale ?? false}
           error={dash.error}
           onRetry={() => dash.refresh(true)}
         />
