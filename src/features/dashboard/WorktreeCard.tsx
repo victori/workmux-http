@@ -97,6 +97,14 @@ export function WorktreeCard({
           {worktree.isMain && (
             <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-fg-muted">main</span>
           )}
+          {(worktree.unpushed ?? 0) > 0 && (
+            <span
+              title={`${worktree.unpushed} unpushed commit${worktree.unpushed === 1 ? '' : 's'}`}
+              className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tabular-nums text-accent"
+            >
+              ↑{worktree.unpushed}
+            </span>
+          )}
           {worktree.hasUncommittedChanges && (
             <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-medium text-warn">dirty</span>
           )}

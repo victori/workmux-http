@@ -34,6 +34,7 @@ function worktree(over: Partial<WorktreeView> & { id: string }): WorktreeView {
     isOpen: true,
     agentStatuses: [],
     createdAt: 0,
+    unpushed: null,
     prUrl: null,
     ...over,
   }

@@ -212,6 +212,7 @@ export class Discovery {
         ),
         createdAt: w.created_at,
         prUrl: await this.prUrlFor(id, w),
+        unpushed: (await this.gitInfoFor(w.path))?.ahead ?? null,
       })
     }
 
@@ -251,6 +252,8 @@ export class Discovery {
         hasUnstaged: st.hasUnstaged,
         hasUnmergedCommits: st.ahead > 0,
         unborn: st.unborn,
+        ahead: st.hasUpstream ? st.ahead : null,
+        behind: st.hasUpstream ? st.behind : null,
       }
       this.gitCache.set(workdir, { at: Date.now(), value: info, failed: false })
       return info

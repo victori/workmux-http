@@ -5,11 +5,15 @@ import { parseDiff, type ParsedFile } from '../hunks.js'
 
 export interface RepoStatus {
   branch: string | null
+  /** HEAD sha (or descriptor like '(rebase)') from branch.oid. */
+  oid: string
   unborn: boolean
   hasStaged: boolean
   hasUnstaged: boolean
   ahead: number
   behind: number
+  /** True when porcelain reported `# branch.ab`, i.e. an upstream is set. */
+  hasUpstream: boolean
   untracked: string[]
   /** Tracked files with worktree-side changes not fully staged. */
   unstaged: string[]
@@ -55,11 +59,13 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
   }
   const status: RepoStatus = {
     branch: null,
+    oid: '',
     unborn: false,
     hasStaged: false,
     hasUnstaged: false,
     ahead: 0,
     behind: 0,
+    hasUpstream: false,
     untracked: [],
     unstaged: [],
     conflicts: [],
@@ -67,6 +73,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
   for (const line of res.stdout.split('\n')) {
     if (!line) continue
     if (line.startsWith('# branch.oid ')) {
+      status.oid = line.slice(12).trim()
       if (line.slice(12).trim() === '(rebase)' || line.includes('unborn')) status.unborn = true
       const oid = line.slice(12).trim()
       if (oid.startsWith('(')) status.unborn = true
@@ -74,6 +81,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
       const head = line.slice(13).trim()
       status.branch = head === '(detached)' || head.startsWith('(') ? head : head
     } else if (line.startsWith('# branch.ab ')) {
+      status.hasUpstream = true
       const [, ahead, behind] = line.slice(10).split(' ')
       status.ahead = Number(ahead ?? 0)
       status.behind = Math.abs(Number(behind ?? 0))
@@ -182,7 +190,7 @@ export async function resolveBase(cwd: string): Promise<string | null> {
 
 // Revision names must not look like options and must start alnum; guards
 // against argv option injection via repo-controlled .workmux.yaml values.
-const SAFE_REV = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+export const SAFE_REV = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 
 async function readWorkmuxBase(cwd: string): Promise<string | null> {
   for (const name of ['.workmux.yaml', '.workmux.yml']) {
@@ -212,4 +220,68 @@ export async function prUrl(cwd: string, branch: string): Promise<string | null>
   } catch {
     return null
   }
+}
+
+export interface CommitEntry {
+  sha: string
+  subject: string
+}
+
+export interface UnpushedResult {
+  commits: CommitEntry[]
+  truncated: boolean
+  /** Range label the commits are ahead of; null for first push. */
+  ref: string | null
+}
+
+/** `origin` remote configured. */
+export async function hasOrigin(cwd: string): Promise<boolean> {
+  const res = await run(['git', 'remote', 'get-url', 'origin'], { cwd }).catch(() => null)
+  return res !== null && res.code === 0
+}
+
+/**
+ * Commits on HEAD not present on the remote-tracking branch (newest first,
+ * capped at limit). Uses upstream when set, else origin/<branch> when that
+ * remote ref exists, else all of HEAD (first push).
+ */
+export async function unpushedCommits(
+  cwd: string,
+  branch: string,
+  limit: number,
+): Promise<UnpushedResult> {
+  let ref: string | null = null
+  const up = await run(['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd })
+  if (up.code === 0 && up.stdout.trim() !== '') {
+    ref = up.stdout.trim()
+  } else if (SAFE_REV.test(branch)) {
+    const remoteRef = await run(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd })
+    if (remoteRef.code === 0) ref = `origin/${branch}`
+  }
+  const range = ref ? `${ref}..HEAD` : 'HEAD'
+  const res = await run(['git', 'log', `-${limit + 1}`, '--pretty=format:%h%x09%s', range], { cwd })
+  if (res.code !== 0) return { commits: [], truncated: false, ref }
+  const lines = res.stdout.split('\n').filter((l) => l !== '')
+  const truncated = lines.length > limit
+  const commits = lines.slice(0, limit).map((l) => {
+    const tab = l.indexOf('\t')
+    return { sha: l.slice(0, tab), subject: l.slice(tab + 1) }
+  })
+  return { commits, truncated, ref }
+}
+
+/**
+ * Push current branch. First push (no upstream) runs `push -u origin
+ * <branch>`; otherwise plain `git push`. NEVER any force variant — a
+ * non-fast-forward is rejected by the remote and surfaced as an error.
+ */
+export async function push(
+  cwd: string,
+  branch: string,
+  setUpstream: boolean,
+  timeoutMs: number,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const argv = setUpstream ? ['git', 'push', '-u', 'origin', branch] : ['git', 'push']
+  const res = await run(argv, { cwd, timeoutMs })
+  return { code: res.code, stdout: res.stdout, stderr: res.stderr }
 }

@@ -96,6 +96,7 @@ const snapshot: DashboardSnapshot = {
       isOpen: true,
       agentStatuses: ['working'],
       createdAt: 1,
+      unpushed: null,
       prUrl: null,
     },
   ],

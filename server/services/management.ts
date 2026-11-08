@@ -245,10 +245,20 @@ export class Management {
     return { text }
   }
 
-  private async evaluateAction(req: PrepareActionRequest): Promise<{ label: string; warnings: string[]; blocked?: string; key: string }> {
+  private async evaluateAction(req: PrepareActionRequest): Promise<{
+    label: string
+    warnings: string[]
+    blocked?: string
+    key: string
+    commits?: Array<{ sha: string; subject: string }>
+    commitsTruncated?: boolean
+  }> {
     const warnings: string[] = []
     let blocked: string | undefined
     let label = ''
+    let commits: Array<{ sha: string; subject: string }> | undefined
+    let commitsTruncated: boolean | undefined
+    let keyExtra: string[] | undefined
 
     if (req.action === 'stop') {
       const agent = (await this.discovery.agentTargets()).get(req.targetId)
@@ -279,14 +289,42 @@ export class Management {
       }
       if (req.action === 'close' && !wt.isOpen) blocked = 'worktree window is not open'
       if (req.action === 'open' && wt.isOpen) blocked = 'worktree window is already open'
+      if (req.action === 'push') {
+        const st = await git.repoStatus(wt.path).catch(() => null)
+        if (!st || st.unborn) {
+          blocked = 'repository has no commits to push'
+        } else if (st.branch === null || st.branch.startsWith('(')) {
+          blocked = 'detached HEAD; checkout a branch before pushing'
+        } else if (!git.SAFE_REV.test(st.branch)) {
+          blocked = 'branch name is not push-safe'
+        } else if (!(await git.hasOrigin(wt.path))) {
+          blocked = 'no origin remote configured'
+        } else {
+          const un = await git.unpushedCommits(wt.path, st.branch, BOUNDS.maxPushCommitsList)
+          commits = un.commits
+          commitsTruncated = un.truncated
+          keyExtra = [st.oid, String(un.commits.length), un.ref ?? 'first-push']
+          if (un.ref === null && un.commits.length === 0) {
+            blocked = 'nothing to push'
+          } else if (un.ref !== null && st.ahead === 0 && !st.hasUpstream) {
+            blocked = 'nothing to push'
+          } else if (un.ref === null) {
+            warnings.push(`no upstream; this creates origin/${st.branch} and sets upstream`)
+          }
+          if (st.hasUpstream && st.ahead === 0) blocked = 'nothing to push — branch is up to date with upstream'
+          if (st.hasUpstream && st.behind > 0) {
+            warnings.push(`remote has ${st.behind} newer commit(s); push will be rejected until you merge`)
+          }
+        }
+      }
     }
 
-    const key = confirmTokenOf([req.action, req.targetId, label, warnings.join('|'), blocked ?? ''])
-    return { label, warnings, blocked, key }
+    const key = confirmTokenOf([req.action, req.targetId, label, warnings.join('|'), blocked ?? '', ...(keyExtra ?? [])])
+    return { label, warnings, blocked, key, commits, commitsTruncated }
   }
 
   async prepare(req: PrepareActionRequest): Promise<PreparedAction> {
-    const { label, warnings, blocked, key } = await this.evaluateAction(req)
+    const { label, warnings, blocked, key, commits, commitsTruncated } = await this.evaluateAction(req)
     const token = randomBytes(16).toString('hex')
     this.pruneTokens()
     this.issued.set(token, { at: Date.now(), key })
@@ -298,6 +336,8 @@ export class Management {
       confirmToken: token,
       warnings,
       blocked,
+      commits,
+      commitsTruncated,
     }
   }
 
@@ -361,6 +401,19 @@ export class Management {
             return { output: out, error: /conflict/i.test(out) ? `merge conflict: ${out}` : `merge failed (exit ${res.code}): ${out}` }
           }
           return { output: out }
+        })
+      }
+      case 'push': {
+        const st = await git.repoStatus(wt.path).catch(() => null)
+        if (!st || st.branch === null || !git.SAFE_REV.test(st.branch)) {
+          throw new BadRequestError('branch is not push-safe')
+        }
+        const setUpstream = !st.hasUpstream
+        return this.operations.start('push', prepared.targetLabel, async () => {
+          const res = await git.push(wt.path, st.branch as string, setUpstream, this.cfg.pushTimeoutMs)
+          const out = `${res.stdout}\n${res.stderr}`.trim()
+          if (res.code !== 0) return { output: out, error: `push failed (exit ${res.code}): ${out}` }
+          return { output: out || 'pushed' }
         })
       }
       case 'remove':

@@ -67,6 +67,7 @@ function worktree(over: Partial<WorktreeView> & { id: string }): WorktreeView {
     isOpen: true,
     agentStatuses: ['waiting'],
     createdAt: 0,
+    unpushed: null,
     prUrl: 'https://github.com/o/r/pull/1',
     ...over,
   }

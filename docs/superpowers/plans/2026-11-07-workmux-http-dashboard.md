@@ -437,3 +437,28 @@ original requirements above remain in force unless noted.
   to `zsh -ic 'opencode-commit -a "{{COMMIT_MSG}}"'`. +6 tests = 204
   vitest; live injection proof inert (payload with `"; touch …; echo "`
   arrived byte-identical, no side effects).
+
+### Push button + unpushed indicator (2026-11-07, plan `docs/2026-11-07-push-button-plan.md`)
+- Agent cards badge `↑N` (unpushed = ahead of upstream; hidden when 0/null,
+  never fabricated) + Push button; worktree cards badge only.
+- Review-before-approve: `PreparedAction.commits` (sha+subject, cap 20,
+  `commitsTruncated`) rendered in ConfirmDialog; token key extended with
+  HEAD sha + commit count + ref ⇒ drift after prepare ⇒ ConfirmationError.
+- `ActionType` +'push' (routes unchanged; zod enum extended). Evaluation:
+  unborn/detached/unsafe-branch/no-origin/zero-ahead ⇒ blocked; first push
+  ⇒ warning (creates origin/<branch>, runs `push -u origin <branch>`);
+  behind>0 ⇒ warning (remote rejects; NO force path exists, ever).
+  Execution async via operations (`WORKMUX_PUSH_TIMEOUT_MS`, default 120s).
+- `GitInfo` gains `ahead`/`behind` (null = no upstream; porcelain
+  `branch.ab` presence), `WorktreeView.unpushed`, `RepoStatus.hasUpstream`
+  + `oid`.
+- Verification delta: +4 git adapter (bare remote: first-push -u, ahead/
+  range, cap+truncation, non-ff rejected), +7 management integration
+  (review list, first push, nothing-to-push block, drift rejection,
+  re-confirm push, divergence ack flow, no-origin block), +6 AgentCard
+  jsdom (badge show/hide/no-git, dialog lists commits, execute+poll
+  success, inline failure) = 222 vitest; +3 e2e (no fabricated badges in
+  fixture mode, blocked contract, unknown target 404) = 25 Playwright.
+  Live read-only: real fleet ahead counts + 3-commit review list; no push
+  executed against real remotes. Disclosed: badge reflects last local
+  status (fetches move remote refs); no selective push.

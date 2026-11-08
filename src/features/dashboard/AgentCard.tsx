@@ -1,6 +1,24 @@
-import type { AgentView } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { AgentView, OperationView, PreparedAction } from '@shared/types'
+import { api, ApiError } from '../../lib/api'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { StatusBadge } from '../../components/StatusBadge'
 import { humanizeElapsed } from './agentSort'
+
+type PreparedWithToken = PreparedAction & { confirmToken?: string }
+
+async function pollOperation(id: string, cancelled: () => boolean): Promise<OperationView | null> {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000))
+    if (cancelled()) return null
+    try {
+      const op = await api.operation(id)
+      if (op.state === 'done' || op.state === 'failed' || op.state === 'unknown') return op
+    } catch {
+      return null
+    }
+  }
+}
 
 export function AgentCard({
   agent,
@@ -15,6 +33,52 @@ export function AgentCard({
   onOpen: (id: string) => void
   onOpenTerminal: (id: string) => void
 }) {
+  const [pending, setPending] = useState<PreparedWithToken | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const cancelledRef = useRef(false)
+  useEffect(() => () => { cancelledRef.current = true }, [])
+
+  const unpushed = agent.git?.ahead ?? null
+
+  async function startPush(): Promise<void> {
+    setNote(null)
+    try {
+      const prepared = (await api.prepare({ action: 'push', targetId: agent.worktreeId })) as PreparedWithToken
+      setPending(prepared)
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'could not prepare push')
+    }
+  }
+
+  async function confirmPush(acceptWarnings: boolean): Promise<void> {
+    const token = pending?.confirmToken
+    if (!pending || !token) return
+    setBusy(true)
+    try {
+      const op = await api.execute({
+        action: 'push',
+        targetId: agent.worktreeId,
+        acceptWarnings,
+        confirmToken: token,
+        requestId: crypto.randomUUID(),
+      })
+      const final = await pollOperation(op.id, () => cancelledRef.current)
+      if (final) {
+        setNote(
+          final.state === 'done'
+            ? `✓ pushed${final.output ? `: ${final.output.split('\n').pop() ?? ''}` : ''}`
+            : final.error ?? `push ${final.state}`,
+        )
+      }
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'push failed')
+    } finally {
+      setBusy(false)
+      setPending(null)
+    }
+  }
+
   return (
     <div
       className={`rounded-xl border bg-surface transition-colors ${
@@ -31,7 +95,17 @@ export function AgentCard({
             )}
             <span className="truncate">{agent.name}</span>
           </span>
-          <StatusBadge status={agent.status} />
+          <span className="flex shrink-0 items-center gap-1.5">
+            {unpushed !== null && unpushed > 0 && (
+              <span
+                title={`${unpushed} unpushed commit${unpushed === 1 ? '' : 's'}`}
+                className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tabular-nums text-accent"
+              >
+                ↑{unpushed}
+              </span>
+            )}
+            <StatusBadge status={agent.status} />
+          </span>
         </div>
         <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
           <span className="truncate">{agent.project}</span>
@@ -46,7 +120,22 @@ export function AgentCard({
         </div>
         {agent.title && <p className="mt-1.5 line-clamp-2 text-xs text-fg-muted">{agent.title}</p>}
       </button>
-      <div className="flex justify-end border-t border-line px-2 py-1">
+      <div className="flex items-center justify-end gap-1 border-t border-line px-2 py-1">
+        {note && (
+          <span role="status" aria-live="polite" className="mr-auto min-w-0 truncate px-1 text-[11px] text-fg-muted">
+            {note}
+          </span>
+        )}
+        {unpushed !== null && unpushed > 0 && (
+          <button
+            onClick={() => void startPush()}
+            disabled={busy}
+            aria-label={`Push ${agent.name}`}
+            className="rounded-lg px-2 py-1 text-xs font-medium text-accent disabled:opacity-45"
+          >
+            {busy ? 'Pushing…' : '⇧ Push'}
+          </button>
+        )}
         <button
           onClick={() => onOpenTerminal(agent.id)}
           aria-label={`Open terminal for ${agent.name}`}
@@ -55,6 +144,20 @@ export function AgentCard({
           ⌨ Terminal
         </button>
       </div>
+      {pending && (
+        <ConfirmDialog
+          title="Push commits"
+          targetLabel={pending.targetLabel}
+          warnings={pending.warnings}
+          commits={pending.commits}
+          commitsTruncated={pending.commitsTruncated}
+          blocked={pending.blocked}
+          confirmLabel="Push now"
+          busy={busy}
+          onConfirm={(ack) => void confirmPush(ack)}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </div>
   )
 }

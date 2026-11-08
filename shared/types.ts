@@ -12,6 +12,10 @@ export interface GitInfo {
   hasUnstaged: boolean
   hasUnmergedCommits: boolean
   unborn: boolean
+  /** Commits ahead of upstream (unpushed). Null = no upstream configured. */
+  ahead: number | null
+  /** Commits behind upstream. Null = no upstream configured. */
+  behind: number | null
   unavailable?: undefined
 }
 
@@ -49,6 +53,8 @@ export interface WorktreeView {
   agentStatuses: AgentStatus[]
   createdAt: number
   prUrl: string | null
+  /** Unpushed commit count (ahead of upstream). Null = no upstream / no git info. */
+  unpushed: number | null
 }
 
 export interface DashboardSnapshot {
@@ -212,7 +218,7 @@ export interface HunkActionResult {
   pieces?: string[]
 }
 
-export type ActionType = 'merge' | 'remove' | 'stop' | 'close' | 'open'
+export type ActionType = 'merge' | 'remove' | 'stop' | 'close' | 'open' | 'push'
 
 export interface PrepareActionRequest {
   action: ActionType
@@ -229,6 +235,10 @@ export interface PreparedAction {
   /** Server-issued token bound to exact action+target+warning state (absent on server-side revalidation). */
   confirmToken?: string
   warnings: string[]
+  /** For 'push': commits that would be published, newest first (capped). */
+  commits?: Array<{ sha: string; subject: string }>
+  /** True when the commits list was truncated at the cap. */
+  commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */
   blocked?: string
 }

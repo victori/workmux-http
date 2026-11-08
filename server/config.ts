@@ -16,6 +16,7 @@ export interface AppConfig {
   maxOwnedTerminals: number
   /** Timeout for the configurable commit command (WORKMUX_COMMIT_TIMEOUT_MS). */
   commitTimeoutMs: number
+  pushTimeoutMs: number
   /**
    * Commit command per agent kind, from WORKMUX_<KIND>_COMMIT_CMD
    * (kind uppercased, non-alphanumerics → `_`), e.g.
@@ -29,6 +30,7 @@ export interface AppConfig {
 const DEFAULT_STALE_AFTER_SECS = 3600
 const DEFAULT_MAX_OWNED_TERMINALS = 4
 const DEFAULT_COMMIT_TIMEOUT_MS = 300000
+const DEFAULT_PUSH_TIMEOUT_MS = 120000
 
 /** Interchangeable agent-kind spellings (workmux reports opencode as `omp`). */
 const KIND_ALIASES: Record<string, string[]> = {
@@ -70,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     staleAfterSecs: Number(env.WORKMUX_HTTP_STALE_AFTER ?? DEFAULT_STALE_AFTER_SECS),
     maxOwnedTerminals: Number(env.WORKMUX_HTTP_MAX_OWNED_TERMINALS ?? DEFAULT_MAX_OWNED_TERMINALS),
     commitTimeoutMs: Number(env.WORKMUX_COMMIT_TIMEOUT_MS ?? DEFAULT_COMMIT_TIMEOUT_MS),
+    pushTimeoutMs: Number(env.WORKMUX_PUSH_TIMEOUT_MS ?? DEFAULT_PUSH_TIMEOUT_MS),
     commitCmdFor: (kind) => {
       if (!kind) return null
       const norm = kind.toUpperCase().replace(/[^A-Z0-9]/g, '_')
@@ -101,4 +104,5 @@ export const BOUNDS = {
   maxCommitMessageBytes: 4096,
   maxAddPaths: 200,
   maxCommitOutputBytes: 4096,
+  maxPushCommitsList: 20,
 }

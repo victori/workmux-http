@@ -70,7 +70,7 @@ const CommitBody = z.object({
 })
 
 const PrepareBody = z.object({
-  action: z.enum(['merge', 'remove', 'stop', 'close', 'open']),
+  action: z.enum(['merge', 'remove', 'stop', 'close', 'open', 'push']),
   targetId: z.string().min(1).max(64),
   acceptWarnings: z.boolean().optional(),
 })

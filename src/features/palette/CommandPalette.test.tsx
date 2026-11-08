@@ -35,6 +35,7 @@ const worktree: WorktreeView = {
   isOpen: true,
   agentStatuses: ['working'],
   createdAt: 1,
+  unpushed: null,
   prUrl: null,
 }
 

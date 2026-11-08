@@ -4,6 +4,10 @@ export interface ConfirmDialogProps {
   title: string
   targetLabel: string
   warnings: string[]
+  /** For 'push': commits that would be published, newest first (capped). */
+  commits?: Array<{ sha: string; subject: string }>
+  /** True when the commits list was truncated at the cap. */
+  commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */
   blocked?: string
   confirmLabel: string
@@ -17,6 +21,8 @@ export function ConfirmDialog({
   title,
   targetLabel,
   warnings,
+  commits,
+  commitsTruncated,
   blocked,
   confirmLabel,
   requireAck,
@@ -40,6 +46,26 @@ export function ConfirmDialog({
         <p className="mt-2 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm text-fg">
           {targetLabel}
         </p>
+        {commits && commits.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+              {commits.length} commit{commits.length === 1 ? '' : 's'} to publish
+            </p>
+            <ul role="list" className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-lg bg-surface-2 px-3 py-2">
+              {commits.map((c) => (
+                <li key={c.sha} className="flex gap-2 font-mono text-xs text-fg">
+                  <span className="shrink-0 text-accent">{c.sha}</span>
+                  <span className="min-w-0 truncate" title={c.subject}>
+                    {c.subject}
+                  </span>
+                </li>
+              ))}
+              {commitsTruncated && (
+                <li className="text-[11px] italic text-fg-muted">…older commits not shown</li>
+              )}
+            </ul>
+          </div>
+        )}
         {warnings.length > 0 && (
           <ul className="mt-3 space-y-1.5">
             {warnings.map((w) => (
