@@ -634,3 +634,18 @@ original requirements above remain in force unless noted.
   malformed/unknown-target, route header+400+404, jsdom Restore row/Restore
   all/Add→Restore flip/offender note) +1 e2e (unstage validation contract,
   27 total); typecheck and build clean.
+
+### Living spec + drift harness (2026-11-08)
+- Added `docs/SPEC.md`: current-state specification (system model, security
+  gates, endpoint/env/error tables, invariants, state machines, WS protocol,
+  UI capability inventory, doc map). The plans + this amendment trail remain
+  the immutable decision log; SPEC.md absorbs current truth so correctness
+  no longer requires reading amendments in order.
+- Precedence rule codified (SPEC.md + AGENTS.md): code + green tests >
+  SPEC.md > latest amendment > AGENTS conventions > README > dated plans.
+- `server/docs.spec.test.ts` machine-checks the enumerable tables against
+  `server/index.ts` / `config.ts` / `security.ts` — adding a route, env var,
+  or error code without a spec update fails `npm test`. Harness proven by
+  live mutation (removed env row -> failure -> restore -> green).
+- Also fixes latent README drift (e2e count 26 -> 27). Verification delta:
+  +11 vitest = 298 exit 0; typecheck clean.

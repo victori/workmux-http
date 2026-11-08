@@ -156,6 +156,10 @@ protection).
 
 ## Architecture
 
+- `docs/SPEC.md` is the current-state specification (endpoints, security
+  gates, invariants, state machines, env vars) — start there; the
+  `docs/superpowers/plans/` trail explains why each decision was made.
+
 ```
 server/index.ts        routes (fastify), SPA fallback, WS /api/terminal
 server/config.ts       env + bounds           server/security.ts  host/origin/header gates
@@ -187,12 +191,14 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 287 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 298 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
-  divergence, and no-origin blocking).
-- `npx playwright test` — 26 e2e tests at iPhone 13 viewport against the
+  divergence, and no-origin blocking; plus the SPEC.md drift harness, which
+  fails the suite when routes/env vars/error codes change without updating
+  `docs/SPEC.md`).
+- `npx playwright test` — 27 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
   reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
   pending-changes + direct-commit contract and graceful degradation,

@@ -158,9 +158,17 @@ it the default in code or docs.
 
 ## Spec Maintenance (post-plan changes)
 
-- The plan in `docs/superpowers/plans/` is the canonical spec. Any feature
-  added or behavior changed after the plan MUST update that document in the
-  same change — do not leave the spec stale.
+- `docs/SPEC.md` is the **current-state specification** (what the system
+  does today). Any change to routes, env vars, error codes, invariants,
+  WS protocol, or state machines MUST update it in the same commit.
+  `server/docs.spec.test.ts` machine-checks the route/env/error tables —
+  drift fails `npm test`.
+- Precedence on conflict: code + green tests > SPEC.md > latest canonical
+  amendment > AGENTS.md conventions > README.md > dated feature plans.
+  Discovering a conflict is a finding: fix the weaker doc in the same change.
+- The plan in `docs/superpowers/plans/` is the canonical decision trail.
+  Any feature added or behavior changed after the plan MUST update that
+  document in the same change — do not leave the spec stale.
 - Append to the `## Amendments` section (create it if absent) with the date
   and: what changed, why (e.g. upstream evidence, security review finding),
   and the verification delta (new test counts, new live proofs).
@@ -190,7 +198,7 @@ it the default in code or docs.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  287 tests green baseline.
+  298 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add
