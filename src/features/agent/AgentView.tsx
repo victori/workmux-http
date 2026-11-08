@@ -7,31 +7,40 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { OutputPane } from './OutputPane'
 import { Composer } from './Composer'
 import { AgentSwitcher } from './AgentSwitcher'
+import { ModeControl } from './ModeControl'
+import type { AgentMode } from './ModeControl'
 
 export interface AgentViewPanelProps {
   agent: AgentView | null
   agents: AgentView[]
   recents: string[]
   connection: ConnectionState
+  mode: AgentMode
+  /** False while Terminal owns the screen: pauses polling, hides subtree. */
+  active: boolean
   onSwitch: (id: string) => void
   onPrevious: () => void
   onOpenDiff: (id: string, label: string) => void
-  onOpenTerminal: (id: string) => void
+  onModeChange: (mode: AgentMode) => void
 }
 
 /**
- * Native agent detail: header switcher, polling output pane, composer.
- * A null agent is an explicit empty state — never a substituted agent.
+ * Native agent detail: header switcher, Reader/Terminal modes, polling output
+ * pane, composer. One target identity; a null agent is an explicit empty
+ * state — never a substituted agent. Reader stays mounted while Terminal is
+ * active so drafts, preferences, and scroll position survive mode switches.
  */
 export function AgentViewPanel({
   agent,
   agents,
   recents,
   connection,
+  mode,
+  active,
   onSwitch,
   onPrevious,
   onOpenDiff,
-  onOpenTerminal,
+  onModeChange,
 }: AgentViewPanelProps) {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const outputRef = useRef('')
@@ -79,7 +88,7 @@ export function AgentViewPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" hidden={!active} inert={!active}>
       <header className="safe-top shrink-0 border-b border-line bg-surface">
         <div className="flex items-center gap-2 px-3 py-2">
           <button
@@ -109,39 +118,36 @@ export function AgentViewPanel({
             ← Prev
           </button>
         </div>
-        {agent && (
-          <div className="flex items-center gap-1.5 px-3 pb-2">
-            <button
-              onClick={() => onOpenTerminal(agent.id)}
-              className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
-            >
-              ⌨ Terminal
-            </button>
-            <button
-              onClick={() => onOpenDiff(agent.worktreeId, `${agent.project}/${agent.git?.branch ?? agent.name}`)}
-              className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
-            >
-              Diff
-            </button>
-            <button
-              onClick={askStop}
-              disabled={stopBusy}
-              className="rounded-lg border border-err/40 px-3 py-1 text-xs text-err disabled:opacity-45"
-            >
-              {stopBusy ? 'Stopping…' : '⏹ Stop'}
-            </button>
-            {stopNote && (
-              <span className="truncate text-xs text-fg-muted" role="status">
-                {stopNote}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 px-3 pb-2">
+          <ModeControl mode={mode} disabled={!agent} onChange={onModeChange} />
+          {agent && (
+            <>
+              <button
+                onClick={() => onOpenDiff(agent.worktreeId, `${agent.project}/${agent.git?.branch ?? agent.name}`)}
+                className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
+              >
+                Diff
+              </button>
+              <button
+                onClick={askStop}
+                disabled={stopBusy}
+                className="rounded-lg border border-err/40 px-3 py-1 text-xs text-err disabled:opacity-45"
+              >
+                {stopBusy ? 'Stopping…' : '⏹ Stop'}
+              </button>
+              {stopNote && (
+                <span className="truncate text-xs text-fg-muted" role="status">
+                  {stopNote}
+                </span>
+              )}
+            </>
+          )}
+        </div>
       </header>
 
       {agent ? (
         <>
-          <OutputPane agent={agent} onOpenSwitcher={() => setSwitcherOpen(true)} outputRef={outputRef} />
+          <OutputPane agent={agent} active={active} onOpenSwitcher={() => setSwitcherOpen(true)} outputRef={outputRef} />
           <Composer agent={agent} connection={connection} outputRef={outputRef} />
         </>
       ) : (

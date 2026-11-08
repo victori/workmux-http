@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { run } from '../server/exec.js'
 import { Tmux } from '../server/adapters/tmux.js'
+import type { AppConfig } from '../server/config.js'
+import type { Discovery } from '../server/services/discovery.js'
+import type { TerminalClientMessage, TerminalServerMessage } from '../shared/types.js'
+import type { WebSocket as WsSocket } from 'ws'
+
+// terminal.js statically loads node-pty; when the native build is absent the
+// geometry audit skips instead of failing the file.
+const terminalHubMod = await import('../server/services/terminal.js').catch(() => null)
 
 /**
  * Integration checks against a REAL tmux server on a dedicated socket
@@ -100,5 +108,79 @@ describe.skipIf(!tmuxAvailable)('grouped session isolation', () => {
     const sessions = await tmux().listSessions()
     expect(sessions.find((s) => s.name === owned)?.owned).toBe(true)
     await tmux().killOwnedSession(owned)
+  })
+})
+
+class FakeWs {
+  readyState = 1
+  /** Real WebSocket exposes OPEN on instances; hub checks ws.OPEN. */
+  OPEN = 1
+  messages: TerminalServerMessage[] = []
+  send(s: string): void {
+    this.messages.push(JSON.parse(s) as TerminalServerMessage)
+  }
+  close(): void {
+    this.readyState = 3
+  }
+  of(type: TerminalServerMessage['type']): TerminalServerMessage | undefined {
+    return [...this.messages].reverse().find((m) => m.type === type)
+  }
+}
+
+async function pollUntil(cond: () => Promise<boolean>, ms = 3000): Promise<void> {
+  const deadline = Date.now() + ms
+  for (;;) {
+    if (await cond()) return
+    if (Date.now() > deadline) throw new Error('condition not met in time')
+    await new Promise((r) => setTimeout(r, 100))
+  }
+}
+
+const geometrySuite = tmuxAvailable && terminalHubMod !== null
+describe.skipIf(!geometrySuite)('advanced terminal geometry audit', () => {
+  test('should attach at exact pane size, resize only when asked, and clean up', async () => {
+    const panes = await tmux().listPanes()
+    const pane = panes.find((p) => p.sessionName === SESSION && p.windowIndex === 0)!
+    const hub = new terminalHubMod!.TerminalHub(
+      { fixtureDir: null, maxOwnedTerminals: 2 } as unknown as AppConfig,
+      tmux(),
+      { agentTargets: async () => new Map([[pane.paneId, {}]]) } as unknown as Discovery,
+    )
+    const sizeBefore = await tmuxCli(
+      'display-message', '-p', '-t', `${SESSION}:w1`,
+      '#{window_width}x#{window_height}',
+    )
+    const parentActiveBefore = await tmuxCli(
+      'display-message', '-p', '-t', SESSION, '#{window_index}',
+    )
+
+    const ws = new FakeWs()
+    // Client hints are deliberately larger than the pane: entry must ignore them.
+    await hub.handle(ws as unknown as WsSocket, { type: 'attach', agentId: pane.paneId, cols: 200, rows: 100 })
+    const attached = ws.of('attached')
+    // rows = window height + status row: attaching keeps the window fixed.
+    expect(attached).toMatchObject({ cols: pane.width, rows: pane.height + 1 })
+    const ownedName = (attached as { sessionId: string }).sessionId
+    expect(ownedName).toMatch(/^wmhttp-adv-/)
+
+    // Give the tmux client a moment to register, then verify nothing moved.
+    await new Promise((r) => setTimeout(r, 400))
+    expect(await tmuxCli('display-message', '-p', '-t', `${SESSION}:w1`, '#{window_width}x#{window_height}')).toBe(sizeBefore)
+    expect(await tmuxCli('display-message', '-p', '-t', SESSION, '#{window_index}')).toBe(parentActiveBefore)
+
+    // Explicit fit is the only path that changes the shared window.
+    hub.handle(ws as unknown as WsSocket, { type: 'fit', cols: 150, rows: 40 } as TerminalClientMessage)
+    expect(ws.of('resized')).toMatchObject({ cols: 150, rows: 40 })
+    await pollUntil(async () => {
+      const s = await tmuxCli('display-message', '-p', '-t', `${SESSION}:w1`, '#{window_width}x#{window_height}')
+      return s.trim() === '150x39'
+    })
+    expect(await tmuxCli('display-message', '-p', '-t', SESSION, '#{window_index}')).toBe(parentActiveBefore)
+
+    // Detach kills the owned session; the resized window persists (disclosed).
+    hub.handle(ws as unknown as WsSocket, { type: 'detach' } as TerminalClientMessage)
+    expect(ws.of('detached')).toBeTruthy()
+    await pollUntil(async () => !(await tmux().sessionExists(ownedName)))
+    expect(await tmuxCli('display-message', '-p', '-t', SESSION, '#{window_index}')).toBe(parentActiveBefore)
   })
 })

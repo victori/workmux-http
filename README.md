@@ -67,10 +67,15 @@ protection).
 - **Themes** — Night (default), Gruvbox, and Twilight, switchable from the ⚙
   sheet on the dashboard; the choice is durable (all tabs) and applies to
   every surface including the advanced terminal and the iPhone chrome tint.
-- **Agent view** — live scrollback capture (2 s poll) opening at the tail
-  (latest output), follow-bottom with jump-latest, composer with per-agent
-  drafts, one-shot Ctrl chord + key toolbar, literal send via atomic tmux
-  paste buffer.
+- **Agent view** — one target, two modes (Reader / Terminal) via the header
+  mode control; the route keeps target + mode together, and Reader stays
+  mounted while Terminal is active (drafts and scroll position survive the
+  round-trip). Reader: live scrollback capture (2 s poll) opening at the tail
+  (latest output), follow-bottom with jump-latest, text-size presets
+  (A−/A+, durable) and wrap toggle (durable; wrapping can break TUI borders),
+  transient fetch errors keep the last snapshot with a visible notice,
+  composer with per-agent drafts, one-shot Ctrl chord + key toolbar, literal
+  send via atomic tmux paste buffer.
 - **Diff view** — WIP (uncommitted) and Review (vs resolved base) unified diffs,
   per-hunk stage / unstage / split / undo, hunk comments, commit (sends a
   literal `commit` to the owning agent), merge behind exact-target confirm.
@@ -78,12 +83,15 @@ protection).
   prepare → show exact target + warnings → confirm token → execute with
   re-validation; each token is single-use. No auto-retry anywhere; uncertain
   delivery is reported as `delivery_unknown` and never silently resent.
-- **Advanced terminal** (`Terminal` on an agent) — real interactive tmux pane
-  over WebSocket (xterm.js + node-pty) inside an owned grouped session
+- **Advanced terminal** (`Terminal` mode on an agent) — real interactive tmux
+  pane over WebSocket (xterm.js + node-pty) inside an owned grouped session
   (`wmhttp-adv-*`, marked `@wmhttp_owned`), so your desktop window selection is
-  never changed. It never resizes the shared window unless you explicitly press
-  *Fit to screen* (the button says so). Owned sessions are excluded from the
-  dashboard.
+  never changed. Entering never resizes the shared window: the pane attaches at
+  the window's current size and a wider grid scrolls horizontally instead of
+  reflowing. The only resize path is the explicit *Resize shared terminal…*
+  action — it warns that it changes the layout for every client attached to
+  the window, needs your confirmation, and the size label updates only after
+  the server acknowledges. Owned sessions are excluded from the dashboard.
 
 ## Architecture
 
@@ -118,10 +126,12 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 120 vitest tests (unit + jsdom component + real-tmux
-  integration on a disposable socket + real-git hunk staging).
-- `npx playwright test` — 12 e2e tests at iPhone 13 viewport against the
+- `npm run test` — 152 vitest tests (unit + jsdom component + real-tmux
+  integration on a disposable socket incl. terminal geometry audit +
+  real-git hunk staging).
+- `npx playwright test` — 18 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
+  reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
   theme switching + persistence, host/origin/header boundary,
   confirm-token rejection).
 - `npm run typecheck` — app + server projects clean.
@@ -150,7 +160,8 @@ Design decisions worth knowing:
 | patch `s` split | *Split* into stageable pieces |
 
 Known gaps (deliberate or not yet built): preview pane resize (`+`/`-`) —
-replaced by wrap toggle and explicit Fit; bulk stage-all (`a`); open file from
+replaced by wrap toggle and the confirm-gated *Resize shared terminal…*
+action; bulk stage-all (`a`); open file from
 patch view (`o`); session rename, rebase, reap-agents, reopen variants; the
 workmux sidebar itself; palette navigation-only targets.
 
@@ -161,6 +172,10 @@ workmux sidebar itself; palette navigation-only targets.
 - One dashboard poll per browser tab; sends are serialized per pane.
 - Advanced terminal requires the native `node-pty` build and refuses to start
   in fixture mode.
+- Entering Terminal mode never changes tmux window geometry (proved by the
+  integration geometry audit); the confirm-gated *Resize shared terminal…*
+  does resize the window for **all** attached clients, and that resize
+  persists after you leave.
 - Verified on desktop Chromium (headless, iPhone 13 viewport) and this macOS
   host against real tmux/workmux 0.1.280. **Not** verified on physical
   iPhone/iPad Safari — visual viewport keyboard avoidance and 44 px targets are

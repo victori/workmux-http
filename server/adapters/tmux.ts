@@ -65,6 +65,11 @@ export interface TmuxLike {
   killPane(paneId: string): Promise<void>
   createOwnedGroupedSession(name: string, parentSession: string): Promise<void>
   selectWindow(sessionName: string, windowIndex: number): Promise<void>
+  /**
+   * Client grid that keeps a window at its current size when attached:
+   * window height plus the status line tmux reserves for clients.
+   */
+  windowGeometry?(paneTarget: string): Promise<{ cols: number; rows: number } | null>
   killOwnedSession(name: string): Promise<void>
   sessionExists(name: string): Promise<boolean>
 }
@@ -213,6 +218,16 @@ export class Tmux implements TmuxLike {
     if (res.code !== 0) {
       throw new Error(`select-window failed: ${res.stderr.trim() || `exit ${res.code}`}`)
     }
+  }
+
+  async windowGeometry(paneTarget: string): Promise<{ cols: number; rows: number } | null> {
+    const res = await run(
+      this.args('display-message', '-p', '-t', paneTarget, '#{window_width}x#{window_height}x#{?status,1,0}'),
+    )
+    if (res.code !== 0) return null
+    const m = /^(\d+)x(\d+)x(\d+)$/.exec(res.stdout.trim())
+    if (!m) return null
+    return { cols: Number(m[1]), rows: Number(m[2]) + Number(m[3]) }
   }
 
   async killOwnedSession(name: string): Promise<void> {

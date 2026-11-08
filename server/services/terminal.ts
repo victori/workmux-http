@@ -98,13 +98,17 @@ export class TerminalHub {
       // selection; selecting only in the owned session never moves the parent.
       await this.tmux.selectWindow(owned, pane.windowIndex)
 
-      // Preserve existing dimensions by default: attach at the window's current size.
-      const cols = clamp(msg.cols, 20, 400) || pane.width
-      const rows = clamp(msg.rows, 6, 200) || pane.height
+      // Preserve shared geometry on entry: attach at a client size that keeps
+      // the window exactly as-is (window height + status row tmux reserves).
+      // A larger client request must NOT enlarge the window — that would
+      // resize the layout for every other tmux client.
+      const geo = await this.tmux.windowGeometry?.(pane.paneId).catch(() => null)
+      const cols = clamp(geo?.cols ?? pane.width, 20, 400) || 80
+      const rows = clamp(geo?.rows ?? pane.height + 1, 6, 200) || 24
       const pty = spawn('tmux', ['-S', this.tmux.socket, 'attach-session', '-t', owned], {
         name: 'xterm-256color',
-        cols: Math.max(cols, pane.width),
-        rows: Math.max(rows, pane.height),
+        cols,
+        rows,
         env: { ...process.env, TERM: 'xterm-256color' },
       })
       pty.onData((data) => send({ type: 'output', data }))
@@ -118,8 +122,8 @@ export class TerminalHub {
         type: 'attached',
         agentId: msg.agentId,
         sessionId: owned,
-        cols: Math.max(cols, pane.width),
-        rows: Math.max(rows, pane.height),
+        cols,
+        rows,
       })
     } catch (err) {
       await this.tmux.killOwnedSession(owned).catch(() => undefined)

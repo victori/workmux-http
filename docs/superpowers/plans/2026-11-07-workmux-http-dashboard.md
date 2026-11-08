@@ -320,3 +320,52 @@ original requirements above remain in force unless noted.
   +1 e2e (switch, computed-color, reload persistence) = 12 Playwright;
   typecheck + build clean. Visual screenshot pass captured per theme;
   contrast verified numerically (image inspection unavailable).
+
+### Reader/Terminal modes (2026-11-07, plan `docs/2026-11-07-reader-terminal-modes.md`)
+- Agent detail is now one target with two explicit modes (Reader / Terminal)
+  owned by the App route (`{view:'agent', mode}`); the old separate
+  `{view:'terminal'}` route is removed. Reader stays mounted while Terminal
+  is active (drafts, scroll, prefs survive the round-trip) but is
+  `hidden`+`inert`; only one transport runs per mode. Mode control:
+  `aria-pressed` button group in the agent header. Escape outside xterm
+  returns to Reader; Escape inside xterm goes to the PTY (TUI apps need it)
+  — the ✕ / "Return to Reader" control is the terminal exit.
+- Reader polish: named text-size presets (small/normal/large/huge =
+  11/12/14/16 px, durable `wmhttp:textSize`, invalid stored values fall
+  back to normal); polling pauses while inactive and late responses are
+  dropped (cancelled flag + in-flight overlap guard); transient output
+  fetch failures keep the last snapshot with an accessible
+  "output unavailable (…) — showing last snapshot" notice, cleared on
+  recovery (404/410 target-gone stays distinct); wrap toggle label states
+  the TUI-border caveat.
+- Terminal viewport: no `fit()` on entry — xterm keeps its default grid
+  until the server's `attached` ack resizes it; rotation, keyboard, and
+  viewport changes never resize the PTY. A wider-than-phone grid is
+  preserved via a horizontal-scroll wrapper (width = cols × canvas-measured
+  cell width; no xterm private APIs). Resizing the shared window is an
+  explicit "Resize shared terminal…" action behind ConfirmDialog (exact
+  target + warnings + ack); `fit` is sent only after confirm, and the size
+  label ("cols×rows · server size / resized to fit") updates only on the
+  server `resized` ack. Unmount sends `detach` and disposes the pty socket.
+- Server geometry fix: `attach` previously spawned the PTY at
+  `max(client hint, pane size)` — a large client hint could grow the shared
+  window on entry. It now ignores hints and spawns at
+  `window_width × (window_height + status rows)` via new
+  `Tmux.windowGeometry` (optional on `TmuxLike`), so entry leaves the
+  shared window exactly as it was. Supersedes the original plan's
+  "Fit to screen" button criterion: default entry is now provably
+  no-op for geometry, and fitting is confirm-gated and ack-labelled.
+- Verification delta: +32 unit (App routing 7, OutputPane 11, TerminalView
+  9, AgentView mode-control +4, geometry integration 1) = 152 vitest;
+  tmux integration 7/7 incl. geometry audit (attach with 200×100 hints
+  keeps window 120×30 and parent window selection; confirmed fit lands
+  150×39; detach kills owned session); +6 e2e (mode default, fixture
+  refusal, draft round-trip, text-size persistence, wrap no-overflow,
+  mocked-WebSocket attach/confirm/resize via `routeWebSocket`) = 18
+  Playwright; typecheck + build clean; live read-only smoke
+  (`/api/health`, `/api/dashboard`) against real tmux/workmux 0.1.280.
+- Disclosed limitations: an explicit fit lands the window at
+  `rows − status` (tmux client accounting; the client viewport equals the
+  PTY rows, which is the intended fit); iOS Safari visual-viewport and
+  keyboard behaviors are unit/e2e-proven only in Chromium emulation —
+  real-device spot-check still recommended.

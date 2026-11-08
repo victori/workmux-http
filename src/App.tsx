@@ -12,13 +12,13 @@ import { CreateWorktreeSheet } from './features/worktrees/CreateWorktreeSheet'
 import { TerminalView } from './features/terminal/TerminalView'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { ConnectionStateBanner } from './components/ConnectionStateBanner'
+import type { AgentMode } from './features/agent/ModeControl'
 
 type Route =
   | { view: 'dashboard' }
   | { view: 'sessions' }
-  | { view: 'agent' }
+  | { view: 'agent'; mode: AgentMode }
   | { view: 'diff'; worktreeId: string; label: string }
-  | { view: 'terminal'; agentId: string }
 
 const NAV_TABS = [
   { view: 'dashboard', label: 'Dashboard', icon: '▦' },
@@ -52,7 +52,7 @@ export default function App() {
     [agents, agentId],
   )
 
-  const openAgent = useCallback((id: string) => {
+  const openAgentAs = useCallback((id: string, mode: AgentMode) => {
     setAgentId(id)
     saveTab('agentId', id)
     setRecents((prev) => {
@@ -60,8 +60,11 @@ export default function App() {
       saveTab('recents', next)
       return next
     })
-    setRoute({ view: 'agent' })
+    setRoute({ view: 'agent', mode })
   }, [])
+
+  /** Every agent entry point lands in Reader; only explicit actions use Terminal. */
+  const openAgent = useCallback((id: string) => openAgentAs(id, 'reader'), [openAgentAs])
 
   const goPrevious = useCallback(() => {
     const prev = recents.find((id) => id !== agentId)
@@ -84,8 +87,10 @@ export default function App() {
         if (paletteOpen || createOpen) {
           setPaletteOpen(false)
           setCreateOpen(false)
-        } else if (route.view === 'diff' || route.view === 'terminal') {
-          setRoute({ view: 'agent' })
+        } else if (route.view === 'diff') {
+          setRoute({ view: 'agent', mode: 'reader' })
+        } else if (route.view === 'agent' && route.mode === 'terminal') {
+          setRoute({ view: 'agent', mode: 'reader' })
         }
       }
       if ((e.key === ':' || (e.shiftKey && e.key === 'P' && (e.metaKey || e.ctrlKey))) && !inField) {
@@ -132,7 +137,7 @@ export default function App() {
           {NAV_TABS.map((t) => (
             <button
               key={t.view}
-              onClick={() => setRoute({ view: t.view })}
+              onClick={() => setRoute(t.view === 'agent' ? { view: 'agent', mode: 'reader' } : { view: t.view })}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
                 navView === t.view ? 'bg-surface-2 text-accent' : 'text-fg-muted hover:bg-surface-2'
               }`}
@@ -174,7 +179,7 @@ export default function App() {
               onClearSessionFilter={() => selectSession(null)}
               onOpenAgent={openAgent}
               onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
-              onOpenTerminal={openAgentTerminal}
+              onOpenTerminal={(id) => openAgentAs(id, 'terminal')}
               onCreate={() => setCreateOpen(true)}
               themeId={themeId}
               onChangeTheme={changeTheme}
@@ -189,31 +194,36 @@ export default function App() {
             />
           )}
           {route.view === 'agent' && (
-            <AgentViewPanel
-              agent={currentAgent}
-              agents={agents}
-              recents={recents}
-              connection={dash.connection}
-              onSwitch={openAgent}
-              onPrevious={goPrevious}
-              onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
-              onOpenTerminal={(id) => setRoute({ view: 'terminal', agentId: id })}
-            />
+            <>
+              <AgentViewPanel
+                agent={currentAgent}
+                agents={agents}
+                recents={recents}
+                connection={dash.connection}
+                mode={route.mode}
+                active={route.mode === 'reader'}
+                onSwitch={openAgent}
+                onPrevious={goPrevious}
+                onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
+                onModeChange={(mode) => setRoute({ view: 'agent', mode })}
+              />
+              {route.mode === 'terminal' && agentId && (
+                <TerminalView
+                  key={agentId}
+                  agentId={agentId}
+                  agentLabel={currentAgent ? `${currentAgent.project}/${currentAgent.name}` : 'target ended'}
+                  theme={THEMES[themeId].xterm}
+                  onClose={() => setRoute({ view: 'agent', mode: 'reader' })}
+                />
+              )}
+            </>
           )}
           {route.view === 'diff' && (
             <DiffView
               worktreeId={route.worktreeId}
               label={route.label}
-              onClose={() => setRoute(currentAgent ? { view: 'agent' } : { view: 'dashboard' })}
+              onClose={() => setRoute(currentAgent ? { view: 'agent', mode: 'reader' } : { view: 'dashboard' })}
               connection={dash.connection}
-            />
-          )}
-          {route.view === 'terminal' && (
-            <TerminalView
-              agentId={route.agentId}
-              agentLabel={`${currentAgent?.project ?? ''}/${currentAgent?.name ?? route.agentId}`}
-              theme={THEMES[themeId].xterm}
-              onClose={() => setRoute({ view: 'agent' })}
             />
           )}
         </div>
@@ -223,7 +233,7 @@ export default function App() {
           {NAV_TABS.map((t) => (
             <button
               key={t.view}
-              onClick={() => setRoute({ view: t.view })}
+              onClick={() => setRoute(t.view === 'agent' ? { view: 'agent', mode: 'reader' } : { view: t.view })}
               aria-label={t.label}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${
                 navView === t.view ? 'text-accent' : 'text-fg-muted'
@@ -256,8 +266,4 @@ export default function App() {
       {createOpen && <CreateWorktreeSheet onClose={() => setCreateOpen(false)} />}
     </div>
   )
-
-  function openAgentTerminal(id: string): void {
-    setRoute({ view: 'terminal', agentId: id })
-  }
 }

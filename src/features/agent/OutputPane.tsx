@@ -8,28 +8,48 @@ const POLL_MS = 2000
 /** Auto-scroll only while the user is this close to the bottom. */
 const FOLLOW_PX = 40
 
+/** Named Reader text-size presets; stored key is validated against these. */
+const TEXT_SIZES = { small: 11, normal: 12, large: 14, huge: 16 } as const
+type TextSize = keyof typeof TEXT_SIZES
+const TEXT_SIZE_ORDER: TextSize[] = ['small', 'normal', 'large', 'huge']
+const DEFAULT_TEXT_SIZE: TextSize = 'normal'
+
+function loadTextSize(): TextSize {
+  const stored = loadPref<string>('textSize', DEFAULT_TEXT_SIZE)
+  return stored in TEXT_SIZES ? (stored as TextSize) : DEFAULT_TEXT_SIZE
+}
+
 /**
- * Polling pane for an agent's terminal screen. The response is a full screen
- * snapshot: content is replaced wholesale each poll, and identical text skips
- * the DOM update so text selection survives.
+ * Reader pane for an agent's terminal screen snapshot. The response is a full
+ * screen: content is replaced wholesale each poll, and identical text skips the
+ * DOM update so text selection survives. This is a live snapshot, not a
+ * conversation log — wrapping may break TUI borders (disclosed in the UI).
+ * While inactive (Terminal mode), polling pauses and late responses are
+ * dropped; scroll/follow state persists for the return.
  */
 export function OutputPane({
   agent,
+  active,
   onOpenSwitcher,
   outputRef,
 }: {
   agent: AgentView | null
+  /** False while Terminal owns the screen: polling pauses, late responses ignored. */
+  active: boolean
   onOpenSwitcher: () => void
   outputRef?: MutableRefObject<string>
 }) {
   const ansi = useMemo(() => new AnsiUp(), [])
   const [html, setHtml] = useState('')
   const [targetGone, setTargetGone] = useState(false)
+  const [outputError, setOutputError] = useState<string | null>(null)
   const [wrap, setWrap] = useState<boolean>(() => loadPref<boolean>('wrap', true))
+  const [textSize, setTextSize] = useState<TextSize>(loadTextSize)
   const [showJump, setShowJump] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
   const lastTextRef = useRef('')
+  const inFlightRef = useRef(false)
 
   const agentId = agent?.id ?? null
 
@@ -38,20 +58,24 @@ export function OutputPane({
     followRef.current = true
     setShowJump(false)
     setTargetGone(false)
+    setOutputError(null)
     setHtml('')
     if (outputRef) outputRef.current = ''
   }, [agentId, outputRef])
 
   useEffect(() => {
-    if (!agentId) return
+    if (!agentId || !active) return
     let cancelled = false
 
     const fetchOnce = () => {
+      if (inFlightRef.current) return
+      inFlightRef.current = true
       api
         .output(agentId)
         .then((res) => {
           if (cancelled) return
           setTargetGone(false)
+          setOutputError(null)
           if (outputRef) outputRef.current = res.text
           // Identical screen: skip the update to preserve selection.
           if (res.text === lastTextRef.current) return
@@ -62,7 +86,13 @@ export function OutputPane({
           if (cancelled) return
           if (err instanceof ApiError && (err.status === 410 || err.status === 404)) {
             setTargetGone(true)
+            return
           }
+          // Transient failure: keep the last snapshot on screen, say so.
+          setOutputError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) inFlightRef.current = false
         })
     }
 
@@ -76,10 +106,11 @@ export function OutputPane({
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       cancelled = true
+      inFlightRef.current = false
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [agentId, ansi, outputRef])
+  }, [agentId, active, ansi, outputRef])
 
   // Follow the bottom only when the user hasn't scrolled away.
   useEffect(() => {
@@ -109,6 +140,15 @@ export function OutputPane({
     })
   }
 
+  const stepTextSize = (delta: 1 | -1) => {
+    setTextSize((s) => {
+      const idx = Math.min(TEXT_SIZE_ORDER.length - 1, Math.max(0, TEXT_SIZE_ORDER.indexOf(s) + delta))
+      const next = TEXT_SIZE_ORDER[idx]!
+      savePref('textSize', next)
+      return next
+    })
+  }
+
   if (targetGone) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-bg p-6 text-center">
@@ -122,20 +162,53 @@ export function OutputPane({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-bg">
-      <div className="flex justify-end border-b border-line bg-surface px-2 py-1">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
+      <div className="flex shrink-0 items-center justify-end gap-1 border-b border-line bg-surface px-2 py-1">
+        <div className="flex items-center gap-1" role="group" aria-label="Text size">
+          <button
+            onClick={() => stepTextSize(-1)}
+            disabled={textSize === TEXT_SIZE_ORDER[0]}
+            aria-label="Decrease text size"
+            className="min-h-0 rounded-md px-2 py-1 text-xs text-fg-muted"
+          >
+            A−
+          </button>
+          <span className="min-w-10 text-center text-[10px] uppercase tracking-wide text-fg-muted">
+            {textSize}
+          </span>
+          <button
+            onClick={() => stepTextSize(1)}
+            disabled={textSize === TEXT_SIZE_ORDER[TEXT_SIZE_ORDER.length - 1]}
+            aria-label="Increase text size"
+            className="min-h-0 rounded-md px-2 py-1 text-xs text-fg-muted"
+          >
+            A+
+          </button>
+        </div>
         <button
           onClick={toggleWrap}
           aria-pressed={wrap}
+          aria-label={wrap ? 'Wrap lines on — may break TUI borders' : 'Wrap lines off — horizontal scroll keeps alignment'}
+          title={
+            wrap
+              ? 'Snapshot of the terminal screen; wrapping may break TUI borders and tables'
+              : 'Aligned tables and source keep columns; swipe to scroll'
+          }
           className="min-h-0 rounded-md px-2 py-1 text-xs text-fg-muted"
         >
           {wrap ? '↩ wrap on' : '↔ wrap off'}
         </button>
       </div>
+      {outputError && (
+        <div role="status" aria-live="polite" className="shrink-0 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+          output unavailable ({outputError}) — showing last snapshot
+        </div>
+      )}
       <div
         ref={boxRef}
         onScroll={onScroll}
-        className={`terminal-output flex-1 min-h-0 overflow-auto p-3 ${wrap ? '' : 'no-wrap'}`}
+        className={`terminal-output min-h-0 min-w-0 flex-1 overflow-auto p-3 ${wrap ? '' : 'no-wrap'}`}
+        style={{ fontSize: TEXT_SIZES[textSize] }}
       >
         <div dangerouslySetInnerHTML={{ __html: html }} />
       </div>

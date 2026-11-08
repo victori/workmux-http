@@ -73,17 +73,19 @@ const doneOp: OperationView = {
   endedAt: 2,
 }
 
-function renderPanel(): void {
+function renderPanel(over: Partial<{ mode: 'reader' | 'terminal'; active: boolean }> = {}): void {
   render(
     <AgentViewPanel
       agent={A}
       agents={[A]}
       recents={['%1']}
       connection="online"
+      mode={over.mode ?? 'reader'}
+      active={over.active ?? true}
       onSwitch={() => undefined}
       onPrevious={() => undefined}
       onOpenDiff={() => undefined}
-      onOpenTerminal={() => undefined}
+      onModeChange={() => undefined}
     />,
   )
 }
@@ -102,6 +104,73 @@ beforeEach(() => {
 })
 
 afterEach(cleanup)
+
+describe('mode control', () => {
+  it('exposes Reader/Terminal as a pressed-state group', () => {
+    renderPanel()
+    expect(screen.getByRole('group', { name: 'Agent view mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reader' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Terminal' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('requests the requested mode on tap', () => {
+    const onModeChange = vi.fn()
+    render(
+      <AgentViewPanel
+        agent={A}
+        agents={[A]}
+        recents={['%1']}
+        connection="online"
+        mode="reader"
+        active
+        onSwitch={() => undefined}
+        onPrevious={() => undefined}
+        onOpenDiff={() => undefined}
+        onModeChange={onModeChange}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }))
+    expect(onModeChange).toHaveBeenCalledWith('terminal')
+  })
+
+  it('hides and inerts the reader subtree while terminal is active', () => {
+    const { container } = render(
+      <AgentViewPanel
+        agent={A}
+        agents={[A]}
+        recents={['%1']}
+        connection="online"
+        mode="terminal"
+        active={false}
+        onSwitch={() => undefined}
+        onPrevious={() => undefined}
+        onOpenDiff={() => undefined}
+        onModeChange={() => undefined}
+      />,
+    )
+    const root = container.querySelector(':scope > div')
+    expect(root).toHaveAttribute('hidden')
+    expect(root).toHaveAttribute('inert')
+  })
+
+  it('disables mode buttons without a target', () => {
+    render(
+      <AgentViewPanel
+        agent={null}
+        agents={[]}
+        recents={[]}
+        connection="online"
+        mode="reader"
+        active
+        onSwitch={() => undefined}
+        onPrevious={() => undefined}
+        onOpenDiff={() => undefined}
+        onModeChange={() => undefined}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Terminal' })).toBeDisabled()
+  })
+})
 
 describe('AgentView stop action', () => {
   it('prepares stop and shows exact target in the confirm dialog', async () => {
