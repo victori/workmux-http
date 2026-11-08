@@ -83,6 +83,8 @@ function measureCell(): { w: number; h: number } {
  */
 export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  /** Outer visible viewport (the horizontally scrollable wrapper). */
+  const viewportRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -97,6 +99,8 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
   const [fitApplied, setFitApplied] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [resizeError, setResizeError] = useState<string | null>(null)
+  /** Keystroke-target disclosure: window's active pane differs from this agent. */
+  const [paneNote, setPaneNote] = useState<string | null>(null)
   const [cell] = useState(measureCell)
 
   // Live theme switching: xterm applies palette changes without remount.
@@ -155,6 +159,18 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
           term.resize(msg.cols, msg.rows)
           setGrid({ cols: msg.cols, rows: msg.rows })
           setFitApplied(false)
+          setPaneNote(
+            msg.activePaneId && msg.activePaneId !== msg.agentId
+              ? `This terminal is session-wide: the window's active pane is ${msg.activePaneId}, not this agent — keystrokes go there.`
+              : null,
+          )
+          break
+        case 'pane-changed':
+          setPaneNote(
+            msg.activePaneId === agentId
+              ? null
+              : `The window's active pane is now ${msg.activePaneId} — keystrokes go there.`,
+          )
           break
         case 'output':
           term.write(msg.data)
@@ -227,16 +243,28 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId])
 
+  /**
+   * Fit proposal from the VISIBLE viewport, not the expanded inner grid
+   * (audit F09): the inner container is widened to the server grid for
+   * horizontal scrolling, so FitAddon would happily propose MORE columns.
+   */
+  function viewportProposal(): { cols: number; rows: number } | null {
+    const vp = viewportRef.current
+    if (!vp || cell.w <= 0 || cell.h <= 0) return null
+    const cols = Math.floor((vp.clientWidth - 8) / cell.w) // p-1 padding
+    const rows = Math.floor(vp.clientHeight / cell.h)
+    if (cols < 20 || rows < 6) return null
+    return { cols: Math.min(cols, 400), rows: Math.min(rows, 200) }
+  }
+
   function requestResize(): void {
-    const fit = fitRef.current
     const ws = wsRef.current
-    if (!fit || !ws || ws.readyState !== WebSocket.OPEN) return
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
     const now = Date.now()
     if (now - lastFitRef.current < FIT_THROTTLE_MS) return
     lastFitRef.current = now
     // Measure only — the live grid stays untouched until the user confirms.
-    const proposal = fit.proposeDimensions()
-    if (!proposal || proposal.cols < 1 || proposal.rows < 1) {
+    if (!viewportProposal()) {
       setResizeError('cannot measure available space right now')
       return
     }
@@ -244,19 +272,17 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
   }
 
   function confirmResize(): void {
-    const term = termRef.current
-    const fit = fitRef.current
     const ws = wsRef.current
     setConfirmOpen(false)
-    if (!term || !fit || !ws || ws.readyState !== WebSocket.OPEN) return
-    const proposal = fit.proposeDimensions()
-    if (!proposal || proposal.cols < 1 || proposal.rows < 1) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    const proposal = viewportProposal()
+    if (!proposal) {
       setResizeError('cannot measure available space right now')
       return
     }
-    fit.fit()
+    // NO local fit: the grid changes only when the server acks with
+    // `resized`, so a rejected/failed resize never desyncs the client.
     ws.send(JSON.stringify({ type: 'fit', cols: proposal.cols, rows: proposal.rows } satisfies TerminalClientMessage))
-    // fitApplied flips only when the server acks with `resized`.
   }
 
   return (
@@ -301,6 +327,9 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
       {resizeError && (
         <div role="status" className="shrink-0 bg-warn/10 px-3 py-1.5 text-xs text-warn">{resizeError}</div>
       )}
+      {paneNote && status === 'attached' && (
+        <div role="status" className="shrink-0 bg-warn/10 px-3 py-1.5 text-xs text-warn">{paneNote}</div>
+      )}
       {status === 'detached' && (
         <div className="flex shrink-0 items-center justify-between gap-2 bg-warn/10 px-3 py-2 text-xs text-warn">
           <span>detached: {detachReason ?? 'unknown reason'}</span>
@@ -323,7 +352,7 @@ export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalVi
 
       {/* Horizontal scroll preserves the server grid; xterm owns vertical
           scrollback internally. data-terminal-root: App key handler skips. */}
-      <div data-terminal-root className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-bg p-1">
+      <div ref={viewportRef} data-terminal-root className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-bg p-1">
         <div
           className="h-full"
           style={{ width: grid ? grid.cols * cell.w + 8 : '100%', minWidth: '100%' }}

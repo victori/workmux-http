@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { buildCommitArgv, buildPushArgv, tokenizeCommand } from './commitCmd.js'
 
@@ -176,5 +177,30 @@ describe('buildPushArgv', () => {
 
   it('should throw on empty command', () => {
     expect(() => buildPushArgv('   ', { branch: 'main', remote: 'origin' })).toThrow(/empty/)
+  })
+})
+
+describe('backslash-aware quoting contexts (audit F02)', () => {
+  it('keeps command substitution inert after a backslash-escaped quote in a dq region', () => {
+    const argv = buildCommitArgv(`sh -c 'printf "%s\\n" "prefix\\"{{COMMIT_MSG}}suffix"'`, '$(printf AUDIT_MARKER)')
+    expect(argv).toHaveLength(3)
+    expect(argv[2]).toContain('\\$(printf AUDIT_MARKER)')
+  })
+
+  it('round-trips a hostile message through a real shell without executing it', () => {
+    const argv = buildCommitArgv(`sh -c 'printf "%s" "p\\"{{COMMIT_MSG}}s"'`, '$(id)`whoami`')
+    const out = execFileSync(argv[0]!, argv.slice(1), { encoding: 'utf8' })
+    expect(out).toBe('p"$(id)`whoami`s')
+  })
+
+  it('round-trips a message through a single-quoted region (nothing escapes inside sq)', () => {
+    const argv = buildCommitArgv(`sh -c 'printf %s "p{{COMMIT_MSG}}s"'`, `a$(id)b'c`)
+    const out = execFileSync(argv[0]!, argv.slice(1), { encoding: 'utf8' })
+    expect(out).toBe(`pa$(id)b'cs`)
+  })
+
+  it('keeps escaped quotes inside double-quoted config tokens intact when tokenizing', () => {
+    const toks = tokenizeCommand(`git commit -m "msg with \\"quoted\\" text"`)
+    expect(toks).toEqual(['git', 'commit', '-m', 'msg with \\"quoted\\" text'])
   })
 })

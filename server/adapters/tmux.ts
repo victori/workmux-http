@@ -70,6 +70,8 @@ export interface TmuxLike {
    * window height plus the status line tmux reserves for clients.
    */
   windowGeometry?(paneTarget: string): Promise<{ cols: number; rows: number } | null>
+  /** Pane id currently active in a session/window target (keystrokes land there). */
+  activePane?(target: string): Promise<string | null>
   killOwnedSession(name: string): Promise<void>
   sessionExists(name: string): Promise<boolean>
 }
@@ -228,6 +230,16 @@ export class Tmux implements TmuxLike {
     const m = /^(\d+)x(\d+)x(\d+)$/.exec(res.stdout.trim())
     if (!m) return null
     return { cols: Number(m[1]), rows: Number(m[2]) + Number(m[3]) }
+  }
+
+  async activePane(target: string): Promise<string | null> {
+    const res = await run(this.args('list-panes', '-t', target, '-F', '#{pane_id}\t#{pane_active}'))
+    if (res.code !== 0) return null
+    for (const line of res.stdout.split('\n')) {
+      const [id, active] = line.split('\t')
+      if (id && active === '1') return id
+    }
+    return null
   }
 
   async killOwnedSession(name: string): Promise<void> {

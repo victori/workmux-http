@@ -143,14 +143,16 @@ export class Management {
     if (malformed.length > 0) {
       return { ok: false, message: 'invalid paths', offenders: malformed }
     }
-    const status = await git.repoStatus(wt.path)
-    const pending = new Set([...status.untracked, ...status.unstaged, ...status.conflicts])
-    const offenders = paths.filter((p) => !pending.has(p))
-    if (offenders.length > 0) {
-      return { ok: false, message: 'paths are no longer pending; refresh and retry', offenders }
-    }
-    await git.addPaths(wt.path, paths)
-    return { ok: true }
+    return this.locked(targetId, async () => {
+      const status = await git.repoStatus(wt.path)
+      const pending = new Set([...status.untracked, ...status.unstaged, ...status.conflicts])
+      const offenders = paths.filter((p) => !pending.has(p))
+      if (offenders.length > 0) {
+        return { ok: false, message: 'paths are no longer pending; refresh and retry', offenders }
+      }
+      await git.addPaths(wt.path, paths)
+      return { ok: true }
+    })
   }
 
   /**
@@ -163,16 +165,18 @@ export class Management {
     if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
     const cmd = await this.commitCmdForWorktree(targetId)
     if (!cmd) throw new BadRequestError('commit_cmd_not_configured')
-    const st = await git.repoStatus(wt.path).catch(() => null)
-    if (st && st.pendingChanges === 0 && !st.unborn) {
-      throw new BadRequestError('nothing_to_commit: worktree has no staged, unstaged, or untracked changes')
-    }
-    const argv = buildCommitArgv(cmd, message)
-    return this.operations.start('commit', wt.handle, async () => {
-      const r = await git.runCommit(wt.path, argv, this.cfg.commitTimeoutMs)
-      const out = [r.stdout, r.stderr].filter(Boolean).join('\n').slice(-BOUNDS.maxCommitOutputBytes)
-      if (r.code !== 0) return { output: out || null, error: `commit failed (exit ${r.code})` }
-      return { output: out || 'committed' }
+    return this.locked(targetId, async () => {
+      const st = await git.repoStatus(wt.path).catch(() => null)
+      if (st && st.pendingChanges === 0 && !st.unborn) {
+        throw new BadRequestError('nothing_to_commit: worktree has no staged, unstaged, or untracked changes')
+      }
+      const argv = buildCommitArgv(cmd, message)
+      return this.operations.start('commit', wt.handle, async () => {
+        const r = await git.runCommit(wt.path, argv, this.cfg.commitTimeoutMs)
+        const out = [r.stdout, r.stderr].filter(Boolean).join('\n').slice(-BOUNDS.maxCommitOutputBytes)
+        if (r.code !== 0) return { output: out || null, error: `commit failed (exit ${r.code})` }
+        return { output: out || 'committed' }
+      })
     })
   }
 
@@ -209,31 +213,33 @@ export class Management {
   ): Promise<HunkActionResult> {
     const wt = (await this.discovery.worktreeTargets()).get(targetId)
     if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
-    const fresh = await git.diffWip(wt.path)
-    const freshId = snapshotId(`${wt.path}\u0000wip\u0000${fresh.files.map((f) => f.diff).join('\n')}`)
-    if (freshId !== req.snapshotId) {
-      return { ok: false, snapshotStale: true, message: 'diff changed since snapshot; reload and retry' }
-    }
-    const file = fresh.files.find((f) => f.path === req.file)
-    const hunk = file?.hunks[req.hunkIndex]
-    if (!file || !hunk) {
-      return { ok: false, snapshotStale: true, message: 'hunk no longer present; reload and retry' }
-    }
-    if (action === 'split') {
-      if (!hunk.splittable) return { ok: false, snapshotStale: false, message: 'hunk is not splittable' }
-      return { ok: true, snapshotStale: false, pieces: splitHunkText(hunk.text) }
-    }
-    const hunkText = req.piece ?? hunk.text
-    if (req.piece && !pieceMatches(req.piece, hunk)) {
-      return { ok: false, snapshotStale: true, message: 'piece does not match current hunk; reload and retry' }
-    }
-    const patch = buildHunkPatch({ path: file.path, oldPath: file.oldPath, status: file.status }, hunkText)
-    const applied = await git.applyToIndex(wt.path, patch, { reverse: action === 'unstage' })
-    this.discovery.invalidateRepo(wt.path)
-    if (!applied.ok) {
-      return { ok: false, snapshotStale: false, message: applied.error ?? 'apply failed' }
-    }
-    return { ok: true, snapshotStale: false }
+    return this.locked(targetId, async () => {
+      const fresh = await git.diffWip(wt.path)
+      const freshId = snapshotId(`${wt.path}\u0000wip\u0000${fresh.files.map((f) => f.diff).join('\n')}`)
+      if (freshId !== req.snapshotId) {
+        return { ok: false, snapshotStale: true, message: 'diff changed since snapshot; reload and retry' }
+      }
+      const file = fresh.files.find((f) => f.path === req.file)
+      const hunk = file?.hunks[req.hunkIndex]
+      if (!file || !hunk) {
+        return { ok: false, snapshotStale: true, message: 'hunk no longer present; reload and retry' }
+      }
+      if (action === 'split') {
+        if (!hunk.splittable) return { ok: false, snapshotStale: false, message: 'hunk is not splittable' }
+        return { ok: true, snapshotStale: false, pieces: splitHunkText(hunk.text) }
+      }
+      const hunkText = req.piece ?? hunk.text
+      if (req.piece && !pieceMatches(req.piece, hunk)) {
+        return { ok: false, snapshotStale: true, message: 'piece does not match current hunk; reload and retry' }
+      }
+      const patch = buildHunkPatch({ path: file.path, oldPath: file.oldPath, status: file.status }, hunkText)
+      const applied = await git.applyToIndex(wt.path, patch, { reverse: action === 'unstage' })
+      this.discovery.invalidateRepo(wt.path)
+      if (!applied.ok) {
+        return { ok: false, snapshotStale: false, message: applied.error ?? 'apply failed' }
+      }
+      return { ok: true, snapshotStale: false }
+    })
   }
 
   /** Compose a hunk comment (file, line, hunk excerpt, user comment) for the worktree's agent. */
@@ -366,24 +372,32 @@ export class Management {
     if (!issued) throw new ConfirmationError('confirmation expired or invalid; re-confirm the action')
     // Consume synchronously so concurrent executes of the same token cannot both pass.
     this.issued.delete(req.confirmToken)
-    const evaluated = await this.evaluateAction(req)
-    if (evaluated.key !== issued.key) {
-      throw new ConfirmationError('target state changed since confirmation; review the new warnings')
+    // Prune only runs on later prepares; enforce the TTL here too so an old
+    // token can never execute without a fresh review.
+    if (Date.now() - issued.at > BOUNDS.confirmTokenTtlMs) {
+      throw new ConfirmationError('confirmation expired; prepare the action again')
     }
-    if (evaluated.blocked) throw new BadRequestError(evaluated.blocked)
-    if (evaluated.warnings.length > 0 && !req.acceptWarnings) {
-      throw new ConfirmationError(`unacknowledged warnings: ${evaluated.warnings.join('; ')}`)
-    }
-    const prepared: PreparedAction = {
-      action: req.action,
-      targetId: req.targetId,
-      targetLabel: evaluated.label,
-      requiresConfirmation: true,
-      warnings: evaluated.warnings,
-      blocked: evaluated.blocked,
-    }
-
-    return this.locked(req.targetId, () => this.runAction(req.action, prepared, req.acceptWarnings === true))
+    // Evaluate AFTER acquiring the lock: state may change while queued
+    // behind a running operation (audit F03).
+    return this.locked(req.targetId, async () => {
+      const evaluated = await this.evaluateAction(req)
+      if (evaluated.key !== issued.key) {
+        throw new ConfirmationError('target state changed since confirmation; review the new warnings')
+      }
+      if (evaluated.blocked) throw new BadRequestError(evaluated.blocked)
+      if (evaluated.warnings.length > 0 && !req.acceptWarnings) {
+        throw new ConfirmationError(`unacknowledged warnings: ${evaluated.warnings.join('; ')}`)
+      }
+      const prepared: PreparedAction = {
+        action: req.action,
+        targetId: req.targetId,
+        targetLabel: evaluated.label,
+        requiresConfirmation: true,
+        warnings: evaluated.warnings,
+        blocked: evaluated.blocked,
+      }
+      return this.runAction(req.action, prepared, req.acceptWarnings === true)
+    })
   }
 
   private async runAction(
@@ -490,14 +504,22 @@ export class Management {
     })
   }
 
-  /** Serialize conflicting web worktree actions; agents/desktop act outside this lock. */
+  /**
+   * Serialize mutations per target. When the job returns an operation view,
+   * the lock is held until that operation reaches a terminal state — not
+   * released at start (audit F03): a second client's merge cannot begin
+   * while the first client's push is still running.
+   */
   private locked<T>(targetId: string, job: () => Promise<T>): Promise<T> {
     const prev = this.worktreeLocks.get(targetId) ?? Promise.resolve()
     const next = prev.then(job, job)
-    this.worktreeLocks.set(
-      targetId,
-      next.catch(() => undefined),
-    )
+    const held = next
+      .then((v) => {
+        const id = (v as { id?: unknown } | null | undefined)?.id
+        return typeof id === 'string' ? this.operations.settled(id) : undefined
+      })
+      .catch(() => undefined)
+    this.worktreeLocks.set(targetId, held)
     return next
   }
 

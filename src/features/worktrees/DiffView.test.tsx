@@ -119,6 +119,7 @@ beforeEach(() => {
   mockApi.diff.mockResolvedValue(wipDiff)
   mockApi.dashboard.mockResolvedValue(snapshot)
   mockApi.hunkAction.mockResolvedValue({ ok: true, snapshotStale: false })
+  mockApi.addPaths.mockResolvedValue({ ok: true })
 })
 
 describe('DiffView', () => {
@@ -244,6 +245,7 @@ describe('DiffView pending changes and direct commit', () => {
     fireEvent.click(within(section).getByRole('button', { name: 'Add all (2)' }))
     expect(mockApi.addPaths).toHaveBeenCalledWith('wt_1', ['new1.txt', 'base.txt'])
     expect(mockApi.addPaths.mock.calls[0]![1]).not.toContain('clash.txt')
+    expect(await screen.findByText('2 files staged')).toBeInTheDocument()
   })
 
   it('reports stale add offenders and reloads the diff', async () => {

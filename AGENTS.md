@@ -188,9 +188,9 @@ it the default in code or docs.
 
 ## Testing & QA
 
-- **Vitest 3** with projects: `node` (server/shared/integration) and `dom`
+- **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  247 tests green baseline.
+  272 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

@@ -141,6 +141,20 @@ describe('TerminalView entry geometry', () => {
     expect(screen.getByText(/132×43 · server size/)).toBeInTheDocument()
   })
 
+  it('discloses when the window active pane differs from the agent (F05)', async () => {
+    renderView()
+    const ws = latest(FakeSocket.instances)
+    await waitFor(() => expect(ws.sentTypes()).toContain('attach'))
+    act(() =>
+      ws.emit({ type: 'attached', agentId: '%1', sessionId: 'wmhttp-adv-x', cols: 80, rows: 24, activePaneId: '%9' }),
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(/active pane is %9.*keystrokes go there/i)
+    act(() => ws.emit({ type: 'pane-changed', activePaneId: '%1' }))
+    expect(screen.queryByText(/active pane is/)).not.toBeInTheDocument()
+    act(() => ws.emit({ type: 'pane-changed', activePaneId: '%3' }))
+    expect(screen.getByRole('status')).toHaveTextContent(/active pane is now %3/i)
+  })
+
   it('rotation and keyboard-driven resizes never send a fit message', async () => {
     renderView()
     const ws = latest(FakeSocket.instances)
@@ -157,11 +171,19 @@ describe('TerminalView entry geometry', () => {
 })
 
 describe('TerminalView explicit resize', () => {
+  /** jsdom reports 0 metrics; stub the visible viewport (audit F09). */
+  function stubViewport(width: number, height: number): void {
+    const vp = document.querySelector('[data-terminal-root]') as HTMLElement
+    Object.defineProperty(vp, 'clientWidth', { value: width, configurable: true })
+    Object.defineProperty(vp, 'clientHeight', { value: height, configurable: true })
+  }
+
   it('resize button opens a confirm dialog; cancel sends nothing', async () => {
     renderView()
     const ws = latest(FakeSocket.instances)
     await waitFor(() => expect(ws.sentTypes()).toContain('attach'))
     act(() => ws.emit({ type: 'attached', agentId: '%1', sessionId: 'wmhttp-adv-x', cols: 132, rows: 43 }))
+    stubViewport(390, 400)
     fireEvent.click(screen.getByRole('button', { name: /Resize shared terminal/ }))
     expect(screen.getByText('Resize shared terminal')).toBeInTheDocument()
     expect(screen.getByText(/every client attached to it/)).toBeInTheDocument()
@@ -171,23 +193,38 @@ describe('TerminalView explicit resize', () => {
     expect(latest(fitInstances).fit).not.toHaveBeenCalled()
   })
 
-  it('confirmed fit applies locally and sends proposal; label updates only on resized ack', async () => {
+  it('proposals come from the visible viewport, never the expanded grid (F09)', async () => {
     renderView()
     const ws = latest(FakeSocket.instances)
     await waitFor(() => expect(ws.sentTypes()).toContain('attach'))
     act(() => ws.emit({ type: 'attached', agentId: '%1', sessionId: 'wmhttp-adv-x', cols: 132, rows: 43 }))
+    // Viewport 390px wide vs a 132-col server grid: the proposal must be
+    // viewport-sized (~54 cols), not grid-sized.
+    stubViewport(390, 400)
     fireEvent.click(screen.getByRole('button', { name: /Resize shared terminal/ }))
-    const ack = screen.getByRole('checkbox')
-    fireEvent.click(ack)
+    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Resize for all clients' }))
-    expect(latest(fitInstances).fit).toHaveBeenCalled()
     expect(ws.sentTypes()).toContain('fit')
     const fitMsg = JSON.parse(ws.sent.find((s) => JSON.parse(s).type === 'fit')!)
-    expect(fitMsg).toMatchObject({ cols: 100, rows: 50 })
-    // Still labelled as server size until the ack arrives.
+    expect(fitMsg).toMatchObject({ cols: 54, rows: 23 })
+    // No local resize before the server acks (audit F09 second half).
+    expect(latest(fitInstances).fit).not.toHaveBeenCalled()
+    expect(latest(terms).resize).not.toHaveBeenCalledWith(54, 23)
     expect(screen.getByText(/server size/)).toBeInTheDocument()
-    act(() => ws.emit({ type: 'resized', cols: 100, rows: 50 }))
-    expect(screen.getByText(/100×50 · resized to fit/)).toBeInTheDocument()
+    act(() => ws.emit({ type: 'resized', cols: 54, rows: 23 }))
+    expect(latest(terms).resize).toHaveBeenCalledWith(54, 23)
+    expect(screen.getByText(/54×23 · resized to fit/)).toBeInTheDocument()
+  })
+
+  it('refuses to propose when the viewport cannot be measured', async () => {
+    renderView()
+    const ws = latest(FakeSocket.instances)
+    await waitFor(() => expect(ws.sentTypes()).toContain('attach'))
+    act(() => ws.emit({ type: 'attached', agentId: '%1', sessionId: 'wmhttp-adv-x', cols: 132, rows: 43 }))
+    // jsdom default clientWidth 0 → below the 20-col floor.
+    fireEvent.click(screen.getByRole('button', { name: /Resize shared terminal/ }))
+    expect(screen.getByText(/cannot measure available space/i)).toBeInTheDocument()
+    expect(ws.sentTypes()).not.toContain('fit')
   })
 
   it('resize is disabled before attach', () => {

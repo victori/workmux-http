@@ -29,33 +29,27 @@ export interface DiffResult {
 }
 
 /**
- * Extract XY codes and the (first) path from a porcelain v2 entry line.
- * '1': kind XY sub m1 m2 m3 s1 s2 path (6 after XY).
- * '2': + Xscore + path:dst (7 after XY).
- * 'u': sub + 4 modes + 3 shas + path (8 after XY).
- * Git C-quotes special paths ("…"); common escapes are undone.
+ * Parse porcelain v2 fields from a record (NUL-delimited with -z, so paths
+ * are raw bytes — no C-quoting fidelity loss, audit F10). Path is the
+ * remainder after the fixed field count; rename/copy destination kept,
+ * source (next record) dropped.
+ * '1': kind XY sub m1 m2 m3 s1 s2 path.
+ * '2': + Xscore + path (source follows as its own record).
+ * 'u': sub + 4 modes + 3 shas + path.
  */
-function entryFields(line: string): { xy: string; path: string } | null {
-  const kind = line[0]
+function entryFields(record: string): { xy: string; path: string } | null {
+  const kind = record[0]
   if (kind !== '1' && kind !== '2' && kind !== 'u') return null
   const fieldsAfterXy = kind === '1' ? 6 : kind === '2' ? 7 : 8
-  const re = new RegExp(`^${kind} (\\S{2}) (?:\\S+ ){${fieldsAfterXy}}(.+)$`)
-  const m = re.exec(line)
+  const re = new RegExp(`^${kind} (\\S{2}) (?:\\S+ ){${fieldsAfterXy}}(.+)$`, 's')
+  const m = re.exec(record)
   if (!m) return null
-  let path = m[2]!
-  if (kind === '2') {
-    const sep = path.indexOf(': ')
-    if (sep > 0) path = path.slice(0, sep)
-  }
-  if (path.startsWith('"') && path.endsWith('"')) {
-    path = path.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-  }
-  return { xy: m[1]!, path }
+  return { xy: m[1]!, path: m[2]! }
 }
 
 /** Per-repository git facts computed locally; replaces the fragile upstream `status --all --git`. */
 export async function repoStatus(cwd: string): Promise<RepoStatus> {
-  const res = await run(['git', 'status', '--porcelain=v2', '--branch', '-uall'], { cwd })
+  const res = await run(['git', 'status', '--porcelain=v2', '-z', '--branch', '-uall'], { cwd })
   if (res.code !== 0) {
     throw new Error(`git status failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
   }
@@ -73,36 +67,39 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     conflicts: [],
     pendingChanges: 0,
   }
-  for (const line of res.stdout.split('\n')) {
-    if (!line) continue
-    if (line.startsWith('# branch.oid ')) {
-      status.oid = line.slice(12).trim()
-      if (line.slice(12).trim() === '(rebase)' || line.includes('unborn')) status.unborn = true
-      const oid = line.slice(12).trim()
+  const records = res.stdout.split('\0')
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i]!
+    if (!rec) continue
+    if (rec.startsWith('# branch.oid ')) {
+      const oid = rec.slice(12).trim()
+      status.oid = oid
       if (oid.startsWith('(')) status.unborn = true
-    } else if (line.startsWith('# branch.head ')) {
-      const head = line.slice(13).trim()
+    } else if (rec.startsWith('# branch.head ')) {
+      const head = rec.slice(13).trim()
       status.branch = head === '(detached)' || head.startsWith('(') ? head : head
-    } else if (line.startsWith('# branch.ab ')) {
+    } else if (rec.startsWith('# branch.ab ')) {
       status.hasUpstream = true
-      const [, ahead, behind] = line.slice(10).split(' ')
+      const [, ahead, behind] = rec.slice(10).split(' ')
       status.ahead = Number(ahead ?? 0)
       status.behind = Math.abs(Number(behind ?? 0))
-    } else if (line.startsWith('1 ') || line.startsWith('2 ') || line.startsWith('u ')) {
-      const entry = entryFields(line)
+    } else if (rec.startsWith('1 ') || rec.startsWith('2 ') || rec.startsWith('u ')) {
+      const entry = entryFields(rec)
       if (!entry) continue
+      // Rename/copy: the source path is the NEXT record; destination stands.
+      if (rec.startsWith('2 ')) i += 1
       status.pendingChanges += 1
       const { xy, path } = entry
       if (xy[0] !== '.') status.hasStaged = true
       if (xy[1] !== '.') status.hasUnstaged = true
-      if (line.startsWith('u ')) {
+      if (rec.startsWith('u ')) {
         status.hasStaged = true
         status.conflicts.push(path)
       } else if (xy[1] !== '.') {
         status.unstaged.push(path)
       }
-    } else if (line.startsWith('? ')) {
-      status.untracked.push(line.slice(2))
+    } else if (rec.startsWith('? ')) {
+      status.untracked.push(rec.slice(2))
       status.pendingChanges += 1
     }
   }

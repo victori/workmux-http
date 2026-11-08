@@ -119,8 +119,27 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     done(null, payload)
   })
 
+  // Uncaught ZodErrors (query/param .parse) must surface as the documented
+  // 400 invalid_request contract, never as a 500 with internal detail.
+  app.setErrorHandler((err, _req, reply) => {
+    if (err instanceof z.ZodError) {
+      return reply.code(400).send({
+        error: 'invalid_request',
+        detail: err.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).slice(0, 5).join('; '),
+      })
+    }
+    if (err instanceof Error && 'validation' in err && (err as unknown as { validation?: unknown }).validation) {
+      return reply.code(400).send({ error: 'invalid_request', detail: err.message })
+    }
+    return reply.code(500).send({ error: 'internal_error' })
+  })
+
   app.addHook('preHandler', async (req, reply) => {
-    if (!req.url.startsWith('/api/')) return
+    // Classify by the router-resolved pattern, never the raw URL: percent-
+    // encoded prefixes (/%61pi/…) route into /api handlers while req.url
+    // stays undecoded, which let them skip Host/Origin/header validation.
+    const routed = req.routeOptions?.url ?? ''
+    if (!routed.startsWith('/api/') && !req.url.startsWith('/api/')) return
     const verdict = checkRequest(req, cfg)
     if (!verdict.ok) {
       await reply.code(verdict.status ?? 403).send({ error: verdict.error })

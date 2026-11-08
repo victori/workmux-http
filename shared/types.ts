@@ -299,8 +299,18 @@ export type TerminalClientMessage =
 
 /** WS /api/terminal server -> client messages */
 export type TerminalServerMessage =
-  | { type: 'attached'; agentId: string; sessionId: string; cols: number; rows: number }
+  | {
+      type: 'attached'
+      agentId: string
+      sessionId: string
+      cols: number
+      rows: number
+      /** Pane tmux actually focuses in the attached window; may differ from the requested agent (full-session access, disclosed). Absent = unknown. */
+      activePaneId?: string | null
+    }
   | { type: 'output'; data: string }
   | { type: 'resized'; cols: number; rows: number }
+  /** The window's active pane changed while attached; keystrokes follow it. */
+  | { type: 'pane-changed'; activePaneId: string }
   | { type: 'detached'; reason: string }
   | { type: 'error'; error: string }

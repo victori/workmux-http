@@ -554,3 +554,62 @@ original requirements above remain in force unless noted.
   changes (unborn repos exempt).
 - +4 tests (disabled-when-clean, staged-only, degraded fail-open, server
   reject) = 247 vitest; live diff carries pendingKnown.
+
+### Audit remediation round 1 — F01 F06 F08 F12 (2026-11-08, audit `docs/2026-11-08-project-audit.md`)
+- F01 (P1, reproduced): percent-encoded paths (`/%61pi/...`) routed into API
+  handlers while the preHandler guard tested the raw `req.url`, skipping
+  Host/Origin/mutation-header validation. Guard now classifies via
+  `req.routeOptions.url` (router-resolved pattern) with the raw prefix kept
+  as a secondary signal. Live proof: encoded mutation 403
+  `missing_request_header`, encoded GET + forbidden Host 403
+  `forbidden_host`; canonical flows unaffected.
+- F08 (P2): confirm tokens were only TTL-pruned on later prepares; execute
+  now rejects tokens older than `BOUNDS.confirmTokenTtlMs` (still consumed
+  synchronously before the expiry check).
+- F12 (P3): uncaught ZodErrors (e.g. `?force=wrong`) escaped as 500; a
+  global error handler maps them to 400 `invalid_request` with bounded
+  detail, and unexpected errors to a detail-free 500 `internal_error`.
+- F06 (P1): the gate was red — DiffView Add-all test had no `addPaths`
+  resolution, so the handler threw an uncaught TypeError (exit 1 despite 247
+  green). beforeEach now resolves it and the test asserts the `2 files
+  staged` notice. `npm test` exits 0 again.
+- +7 tests (5 route-security, 1 validation contract, 1 token TTL) = 254
+  vitest, exit 0; build clean; 26 e2e.
+- Open from the audit (not this round): F02 (shell-substring interpolation —
+  migration-affecting), F03 (lock spans execution), F04 (terminal attach
+  lifecycle), F05 (pane-scope product decision), F07 (dependency upgrades),
+  F09 (fit measures expanded grid), F10 (porcelain -z), F11 (fetch deadlines).
+
+### Audit remediation round 2 — F02 F03 F04 F05 F07 F09 F10 F11 (2026-11-08)
+- F02 (P1, policy: harden escaping, keep substring): placeholder
+  substitution now uses a left-to-right quote-context scanner with POSIX
+  backslash rules (`\"` inside `"…"` no longer closes the region; nothing
+  escapes inside `'…'`), and the tokenizer keeps escaped quotes inside
+  double-quoted config tokens. Proven by real-shell round-trip tests:
+  `$(id)`/backticks after an escaped quote stay literal bytes.
+- F03 (P1): worktree locks span OPERATION COMPLETION (Operations.settled),
+  not just start; execute re-evaluates confirmation state INSIDE the lock;
+  commit, add, and hunk actions share the same per-target lock. Two clients
+  can no longer interleave destructive commands or index mutations.
+- F04 (P1): attach reserves capacity synchronously (pending counts toward
+  maxOwnedTerminals), carries a per-socket generation, and is cancelled by
+  close/detach/reattach — cancelled attaches kill their owned session and
+  PTY instead of leaking; onExit only removes its own registration;
+  killOwnedSession rejections handled everywhere.
+- F05 (P1, policy: full-session access, disclosed honestly): `attached`
+  carries `activePaneId` (tmux list-panes on the owned session) and a 2 s
+  watchdog emits `pane-changed`; the UI shows a warning banner whenever the
+  window's active pane is not the requested agent ("keystrokes go there").
+  No shared-window selection changes are introduced.
+- F07 (P1): @fastify/static 8→10.1.10, vitest 3→5.1.0; `npm audit` now
+  reports ZERO vulnerabilities (prod+dev). node-pty native verified intact.
+- F09 (P2): fit proposals measure the VISIBLE viewport (clientWidth/Height
+  of the scroll wrapper), never the expanded inner grid; no local
+  `fit.fit()` — the grid changes only on the server `resized` ack.
+- F10 (P2): `git status --porcelain=v2 -z` — NUL-delimited records, raw
+  paths (unicode/quotes/backslashes/tabs/newlines round-trip status→add),
+  rename source records consumed, destination counted once.
+- F11 (P2): GET reads carry `AbortSignal.timeout(15000)`; mutations
+  deliberately keep no deadline (aborting a possibly-applied mutation would
+  fabricate an unknown-delivery the server never reported).
+- +18 tests = 272 vitest exit 0; build clean; 26 e2e; typecheck 0.

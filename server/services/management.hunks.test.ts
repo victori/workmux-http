@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { loadConfig } from '../config.js'
+import { loadConfig, BOUNDS } from '../config.js'
 import type { TmuxLike, TmuxPane, TmuxSession } from '../adapters/tmux.js'
 import { Workmux, type StatusPayload } from '../adapters/workmux.js'
 import { Discovery } from './discovery.js'
@@ -253,5 +253,59 @@ describe('confirmation token lifecycle', () => {
     ])
     const ok = results.filter((r) => r.status === 'fulfilled').length
     expect(ok).toBe(1)
+  })
+
+  test('should reject execute once the token TTL elapsed even without a later prepare (F08)', async () => {
+    const prepared = await management.prepare({ action: 'stop', targetId: '%1' })
+    const token = prepared.confirmToken!
+    const realNow = Date.now
+    try {
+      Date.now = () => realNow() + BOUNDS.confirmTokenTtlMs + 1
+      await expect(
+        management.execute({ action: 'stop', targetId: '%1', confirmToken: token, requestId: 'ex-5' }),
+      ).rejects.toThrow(/confirmation expired/)
+    } finally {
+      Date.now = realNow
+    }
+  })
+
+  test('should serialize executes for one target until the first operation settles (F03)', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const kills: string[] = []
+    const gatedTmux: TmuxLike = {
+      ...idleTmux,
+      killPane: async (id: string) => {
+        kills.push(id)
+        await gate
+      },
+    }
+    const cfg = { ...loadConfig({}), fixtureDir }
+    const gated = new Management(cfg, gatedTmux, new Workmux(), new Discovery(cfg, gatedTmux, new Workmux()), new Operations())
+    const p1 = await gated.prepare({ action: 'stop', targetId: '%1' })
+    const p2 = await gated.prepare({ action: 'stop', targetId: '%1' })
+
+    const e1 = gated.execute({ action: 'stop', targetId: '%1', confirmToken: p1.confirmToken!, requestId: 'f1' })
+    expect((await e1).state).toBe('running')
+    await new Promise((r) => setTimeout(r, 10))
+
+    let secondResolved = false
+    const e2 = gated
+      .execute({ action: 'stop', targetId: '%1', confirmToken: p2.confirmToken!, requestId: 'f2' })
+      .then((v) => {
+        secondResolved = true
+        return v
+      })
+    await new Promise((r) => setTimeout(r, 25))
+    // Second action must stay queued while the first op is still running.
+    expect(secondResolved).toBe(false)
+    expect(kills).toEqual(['%1'])
+
+    release()
+    await Promise.all([e1, e2])
+    expect(kills).toEqual(['%1', '%1'])
+    expect(secondResolved).toBe(true)
   })
 })

@@ -251,3 +251,42 @@ describe('push path (real git + local bare remote)', () => {
     expect(u.commits[0]?.body).toBe('line one\n\nline two')
   })
 })
+
+describe('repoStatus filename fidelity (audit F10)', () => {
+  test('should return raw unicode/quote/space paths and stage them back exactly', async () => {
+    const nasty = ['café.txt', 'sp ace.txt', 'qu"ote.txt', 'back\\slash.txt', 'tab\tname.txt', 'new\nline.txt', "apo's.txt"]
+    for (const name of nasty) writeFileSync(path.join(repo, name), 'nasty\n')
+    try {
+      const s = await repoStatus(repo)
+      for (const name of nasty) expect(s.untracked).toContain(name)
+      await addPaths(repo, nasty) // throws unless every pathspec matched
+      const staged = git(['diff', '--cached', '--name-only', '-z']).split('\0')
+      for (const name of nasty) expect(staged).toContain(name)
+      // Unstage again so later tests see a stable tree.
+      git(['reset', '-q'])
+    } finally {
+      for (const name of nasty) rmSync(path.join(repo, name), { force: true })
+    }
+  })
+
+  test('should keep rename destination and count the rename once', async () => {
+    writeFileSync(path.join(repo, 'orig-name.txt'), 'r\n')
+    git(['add', 'orig-name.txt'])
+    git(['commit', '-qm', 'add orig'])
+    const before = await repoStatus(repo)
+    git(['mv', 'orig-name.txt', 'renamed-dest.txt'])
+    try {
+      const s = await repoStatus(repo)
+      expect(s.hasStaged).toBe(true)
+      // Repo carries other pending entries from earlier tests; the staged
+      // rename ('2' record + source record) must add exactly ONE path entry.
+      expect(s.pendingChanges - before.pendingChanges).toBe(1)
+      expect(git(['diff', '--cached', '--name-status']).trim()).toMatch(/^R\d+\torig-name.txt\trenamed-dest.txt$/m)
+      git(['reset', '-q', '--soft', 'HEAD~1'])
+      git(['reset', '-q'])
+      rmSync(path.join(repo, 'orig-name.txt'), { force: true })
+    } finally {
+      rmSync(path.join(repo, 'renamed-dest.txt'), { force: true })
+    }
+  })
+})

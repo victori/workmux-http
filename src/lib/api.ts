@@ -61,6 +61,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
+/**
+ * Reads carry a deadline (audit F11): a stalled proxy/network must not
+ * freeze polling forever. Mutations deliberately have NO deadline — aborting
+ * a possibly-applied mutation would fake an "unknown delivery" the server
+ * never reported; hangs there resolve via their own timeouts.
+ */
+const READ_TIMEOUT_MS = 15000
+
+function get<T>(path: string): Promise<T> {
+  return request<T>(path, { signal: AbortSignal.timeout(READ_TIMEOUT_MS) })
+}
+
 function post<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, {
     method: 'POST',
@@ -74,17 +86,17 @@ export function encodeId(id: string): string {
 }
 
 export const api = {
-  health: () => request<HealthResponse>('/api/health'),
-  dashboard: (force = false) => request<DashboardSnapshot>(`/api/dashboard${force ? '?force=1' : ''}`),
-  projects: () => request<ProjectInfo[]>('/api/projects'),
+  health: () => get<HealthResponse>('/api/health'),
+  dashboard: (force = false) => get<DashboardSnapshot>(`/api/dashboard${force ? '?force=1' : ''}`),
+  projects: () => get<ProjectInfo[]>('/api/projects'),
   output: (agentId: string, lines?: number) =>
-    request<OutputResponse>(`/api/agents/${encodeId(agentId)}/output${lines ? `?lines=${lines}` : ''}`),
+    get<OutputResponse>(`/api/agents/${encodeId(agentId)}/output${lines ? `?lines=${lines}` : ''}`),
   message: (agentId: string, text: string, requestId: string) =>
     post<DeliveryResult>(`/api/agents/${encodeId(agentId)}/messages`, { text, requestId }),
   keys: (agentId: string, keys: KeyName[], requestId: string) =>
     post<DeliveryResult>(`/api/agents/${encodeId(agentId)}/keys`, { keys, requestId }),
   diff: (worktreeId: string, mode: DiffMode) =>
-    request<DiffResponse>(`/api/worktrees/${encodeId(worktreeId)}/diff?mode=${mode}`),
+    get<DiffResponse>(`/api/worktrees/${encodeId(worktreeId)}/diff?mode=${mode}`),
   hunkAction: (worktreeId: string, action: HunkAction, req: unknown) =>
     post<HunkActionResult>(`/api/worktrees/${encodeId(worktreeId)}/hunks/${action}`, req),
   hunkComment: (worktreeId: string, req: unknown) =>
@@ -97,7 +109,7 @@ export const api = {
   prepare: (req: PrepareActionRequest) => post<PreparedAction>('/api/actions/prepare', req),
   execute: (req: PrepareActionRequest & { confirmToken: string; requestId: string }) =>
     post<OperationView>('/api/actions/execute', req),
-  operation: (id: string) => request<OperationView>(`/api/operations/${encodeId(id)}`),
+  operation: (id: string) => get<OperationView>(`/api/operations/${encodeId(id)}`),
 }
 
 export function terminalWsUrl(): string {

@@ -9,6 +9,7 @@ const MAX_FINISHED_OPS = 100
 
 export class Operations {
   private ops = new Map<string, OperationView>()
+  private done = new Map<string, Promise<void>>()
 
   start(kind: string, target: string, fn: () => Promise<{ output: string | null; error?: string }>): OperationView {
     const id = randomUUID()
@@ -24,7 +25,7 @@ export class Operations {
     }
     this.ops.set(id, view)
     this.evict()
-    void fn()
+    const settled = fn()
       .then(({ output, error }) => {
         view.state = error ? 'failed' : 'done'
         view.output = output
@@ -36,8 +37,15 @@ export class Operations {
       })
       .finally(() => {
         view.endedAt = Date.now()
+        this.done.delete(id)
       })
+    this.done.set(id, settled)
     return view
+  }
+
+  /** Resolves once the operation reaches a terminal state (immediately if unknown/finished). */
+  settled(id: string): Promise<void> {
+    return this.done.get(id) ?? Promise.resolve()
   }
 
   get(id: string): OperationView | null {

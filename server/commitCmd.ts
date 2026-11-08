@@ -10,10 +10,11 @@
  *     shell wrappers.
  *  2. SUBSTRING inside a SHELL wrapper command (sh/bash/zsh/dash/ksh,
  *     e.g. `zsh -ic 'tool -a "{{COMMIT_MSG}}"'`): occurrences are escaped
- *     for their quoting context so a hostile message stays inert when the
- *     shell re-parses — double-quote regions backslash-escape `\ " $ \``;
- *     single-quote regions split-and-requote; bare occurrences get POSIX
- *     single-quote wrapping.
+ *     for their quoting context (backslash-aware scan honoring POSIX rules:
+ *     escapes work outside and inside `"…"` never inside `'…'`) so a hostile
+ *     message stays inert when the shell re-parses — double-quote regions
+ *     backslash-escape `\ " $ \``; single-quote regions split-and-requote;
+ *     bare occurrences get POSIX single-quote wrapping.
  *  3. SUBSTRING for non-shell commands: raw replacement (no shell sits
  *     between us and the command).
  *
@@ -21,7 +22,10 @@
  * element (nothing appended when empty). No eval, ever.
  */
 
-const TOKEN_RE = /"([^"]*)"|'([^']*)'|(\S+)/g
+// Double-quoted spans keep escaped quotes (`\"`) inside the token instead of
+// terminating it; single quotes end at the next `'` (POSIX: nothing escapes
+// inside single quotes).
+const TOKEN_RE = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g
 
 export const COMMIT_MSG_PLACEHOLDER = '{{COMMIT_MSG}}'
 
@@ -41,33 +45,58 @@ function replaceAllLiteral(haystack: string, needle: string, value: string): str
   return haystack.split(needle).join(value)
 }
 
-/** Substitute placeholder occurrences within one token's text. */
+/**
+ * Substitute placeholder occurrences within one token's text using a
+ * left-to-right quote-context scan with POSIX backslash rules: `\` escapes
+ * the next char outside and inside double quotes, and NOTHING escapes inside
+ * single quotes. Regex pair-matching (`"([^"]*)"`) misreads `\"` as a
+ * closing quote and would classify the placeholder in the wrong context,
+ * letting `$(…)` in a message execute when the shell re-parses (audit F02).
+ */
 function substituteIn(text: string, placeholder: string, msg: string, shell: boolean): string {
   if (!shell) return replaceAllLiteral(text, placeholder, msg)
 
-  // Double-quoted regions inside the text: escape for "…" context.
-  let out = text.replace(/"([^"]*)"/g, (_m, inner: string) =>
-    inner.includes(placeholder)
-      ? `"${replaceAllLiteral(inner, placeholder, escapeDoubleQuoted(msg))}"`
-      : `"${inner}"`,
-  )
-  // Single-quoted regions: 'pre{{X}}post' → 'pre'<quoted msg>'post'
-  // (adjacent quoted words concatenate in the shell).
-  out = out.replace(/'([^']*)'/g, (_m, inner: string) => {
-    if (!inner.includes(placeholder)) return `'${inner}'`
-    const parts = inner.split(placeholder)
-    let r = parts[0] === '' ? '' : `'${parts[0]}'`
-    for (const p of parts.slice(1)) {
-      r += shellQuote(msg)
-      if (p !== '') r += `'${p}'`
+  let out = ''
+  let i = 0
+  let ctx: 'bare' | 'dquote' | 'squote' = 'bare'
+  while (i < text.length) {
+    if (text.startsWith(placeholder, i)) {
+      if (ctx === 'dquote') out += escapeDoubleQuoted(msg)
+      // Inside a single-quoted region the message is inert verbatim unless it
+      // contains a quote; only then close, insert a quoted copy, reopen.
+      else if (ctx === 'squote') out += msg.includes("'") ? `'${shellQuote(msg)}'` : msg
+      else out += shellQuote(msg)
+      i += placeholder.length
+      continue
     }
-    return r
-  })
-  // Remaining bare occurrences: single-quote wrap each insertion point.
-  if (out.includes(placeholder)) {
-    const parts = out.split(placeholder)
-    out = parts[0]!
-    for (const p of parts.slice(1)) out += `${shellQuote(msg)}${p}`
+    const c = text[i]!
+    if (ctx === 'bare') {
+      if (c === '\\' && i + 1 < text.length) {
+        out += c + text[i + 1]!
+        i += 2
+        continue
+      }
+      if (c === '"') ctx = 'dquote'
+      else if (c === "'") ctx = 'squote'
+      out += c
+      i++
+      continue
+    }
+    if (ctx === 'dquote') {
+      if (c === '\\' && i + 1 < text.length) {
+        out += c + text[i + 1]!
+        i += 2
+        continue
+      }
+      if (c === '"') ctx = 'bare'
+      out += c
+      i++
+      continue
+    }
+    // squote: nothing escapes; the next ' ends the region.
+    if (c === "'") ctx = 'bare'
+    out += c
+    i++
   }
   return out
 }

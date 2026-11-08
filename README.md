@@ -140,7 +140,12 @@ protection).
   reflowing. The only resize path is the explicit *Resize shared terminal…*
   action — it warns that it changes the layout for every client attached to
   the window, needs your confirmation, and the size label updates only after
-  the server acknowledges. Owned sessions are excluded from the dashboard.
+  the server acknowledges (the proposal is measured from the visible
+  viewport, never the horizontally-expanded grid). Owned sessions are excluded from the dashboard.
+  The terminal is **session-wide**: tmux focuses the window's active pane,
+  which can be a different agent's pane than the one you opened Terminal
+  for — the header banner names the pane keystrokes are landing in and
+  updates when it changes (nothing is ever silently re-targeted).
   While Terminal mode is open, dashboard polling pauses (the pane is live
   over WS, and the pty attach can stall `/api/dashboard` past the stale
   threshold); leaving Terminal forces an immediate refresh, so Terminal use
@@ -179,7 +184,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 247 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 272 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
@@ -227,6 +232,11 @@ workmux sidebar itself; palette navigation-only targets.
 - Output is polled capture (2 s), not a live stream; the advanced terminal is
   the live path.
 - One dashboard poll per browser tab; sends are serialized per pane.
+- Web mutations (merge/push/remove/commit/staging) serialize per worktree —
+  a second confirmed action queues until the first operation completes.
+- API reads time out after 15 s (a stalled network can never freeze
+  polling); mutations have no client deadline — their delivery is decided
+  by the server, never by an abort.
 - Advanced terminal requires the native `node-pty` build and refuses to start
   in fixture mode.
 - Entering Terminal mode never changes tmux window geometry (proved by the
