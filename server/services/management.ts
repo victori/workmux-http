@@ -3,6 +3,8 @@ import type {
   ActionType,
   AddResult,
   AgentView,
+  CommitInfo,
+  CommitListResponse,
   DiffMode,
   DiffResponse,
   HunkActionResult,
@@ -72,7 +74,7 @@ export class Management {
     private readonly operations: Operations,
   ) {}
 
-  async diff(targetId: string, mode: DiffMode): Promise<DiffResponse> {
+  async diff(targetId: string, mode: DiffMode, sha?: string): Promise<DiffResponse> {
     const wt = (await this.discovery.worktreeTargets()).get(targetId)
     if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
     const unborn = !(await git.hasHead(wt.path).catch(() => false))
@@ -93,6 +95,14 @@ export class Management {
       }
     }
     let base: string | null = null
+    let commit: CommitInfo | undefined
+    if (mode === 'commit') {
+      if (!sha) throw new BadRequestError('sha required for commit diff')
+      const info = await git.commitInfo(wt.path, sha)
+      if (!info) throw new BadRequestError(`unknown revision: ${sha}`)
+      commit = info
+      base = info.short
+    }
     if (mode === 'branch') {
       base = await git.resolveBase(wt.path)
       if (!base) {
@@ -112,7 +122,12 @@ export class Management {
         }
       }
     }
-    const result = mode === 'wip' ? await git.diffWip(wt.path) : await git.diffBranch(wt.path, base!)
+    const result =
+      mode === 'wip'
+        ? await git.diffWip(wt.path)
+        : mode === 'branch'
+          ? await git.diffBranch(wt.path, base!)
+          : await git.commitDiff(wt.path, sha!)
     const status = await git.repoStatus(wt.path).catch(() => null)
     const files = result.files.map(toDiffFile)
     const text = result.files.map((f) => f.diff).join('\n')
@@ -120,6 +135,7 @@ export class Management {
       worktreeId: targetId,
       mode,
       base,
+      ...(commit ? { commit } : {}),
       baseMissing: false,
       unborn: false,
       snapshotId: snapshotId(`${wt.path}\u0000${mode}\u0000${text}`),
@@ -131,6 +147,13 @@ export class Management {
       truncated: result.truncated,
       observedAt: Date.now(),
     }
+  }
+
+  /** Commit list for the worktree's HEAD (newest first); unborn → empty. */
+  async commits(targetId: string, limit: number): Promise<CommitListResponse> {
+    const wt = (await this.discovery.worktreeTargets()).get(targetId)
+    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    return git.commitList(wt.path, limit)
   }
 
   /**

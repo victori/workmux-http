@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
   AgentView,
+  CommitInfo,
   DiffFile,
   DiffMode,
   DiffResponse,
@@ -19,6 +20,8 @@ export interface DiffViewProps {
   label: string
   onClose: () => void
   connection: ConnectionState
+  /** When set, the view shows this commit's diff (vs first parent). */
+  commit?: CommitInfo
 }
 
 function FileStats({ file }: { file: DiffFile }) {
@@ -30,8 +33,8 @@ function FileStats({ file }: { file: DiffFile }) {
   )
 }
 
-export function DiffView({ worktreeId, label, onClose, connection }: DiffViewProps) {
-  const [mode, setMode] = useState<DiffMode>('wip')
+export function DiffView({ worktreeId, label, onClose, connection, commit }: DiffViewProps) {
+  const [mode, setMode] = useState<DiffMode>(commit ? 'commit' : 'wip')
   const [diff, setDiff] = useState<DiffResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +66,7 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
     setLoading(true)
     setError(null)
     api
-      .diff(worktreeId, mode)
+      .diff(worktreeId, mode, mode === 'commit' ? commit?.sha : undefined)
       .then((d) => {
         setDiff(d)
         // fresh snapshot: local hunk bookkeeping no longer applies
@@ -77,7 +80,7 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false))
-  }, [worktreeId, mode])
+  }, [worktreeId, mode, commit?.sha])
 
   useEffect(() => {
     load()
@@ -369,6 +372,13 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: segmented mode control + close */}
       <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2 safe-top">
+        {mode === 'commit' ? (
+          <span className="min-w-0 flex-1 truncate text-sm text-fg" title={commit ? `${commit.short} ${commit.subject}` : label}>
+            <span className="font-mono text-accent">{commit?.short ?? ''}</span>{' '}
+            <span className="text-fg-muted">{commit?.subject ?? label}</span>
+            {commit && <span className="ml-2 text-[11px] text-fg-muted/70">vs parent · {commit.author}</span>}
+          </span>
+        ) : (
         <div role="group" aria-label="diff mode" className="flex overflow-hidden rounded-lg border border-line">
           {(['wip', 'branch'] as const).map((m) => (
             <button
@@ -381,10 +391,13 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
             </button>
           ))}
         </div>
+        )}
+        {mode !== 'commit' && (
         <span className="min-w-0 flex-1 truncate text-sm text-fg-muted" title={label}>
           {label}
           {diff?.base ? <span className="text-fg-muted/60"> · base {diff.base}</span> : null}
         </span>
+        )}
         {mode === 'wip' && (
           <button
             onClick={() => setPatchMode((v) => !v)}
@@ -580,7 +593,8 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
         </div>
       </div>
 
-      {/* Footer actions */}
+      {/* Footer actions — commit mode is read-only (history, not worktree ops) */}
+      {mode !== 'commit' && (
       <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-3 py-2 safe-bottom">
         {diff?.commitCmd ? (
           <CommitBar
@@ -630,6 +644,7 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
           Merge
         </button>
       </div>
+      )}
 
       {prepared && (
         <ConfirmDialog

@@ -4,6 +4,7 @@ import type {
   CreateWorktreeRequest,
   DashboardSnapshot,
   DeliveryResult,
+  CommitListResponse,
   DiffMode,
   DiffResponse,
   HealthResponse,
@@ -95,8 +96,14 @@ export const api = {
     post<DeliveryResult>(`/api/agents/${encodeId(agentId)}/messages`, { text, requestId }),
   keys: (agentId: string, keys: KeyName[], requestId: string) =>
     post<DeliveryResult>(`/api/agents/${encodeId(agentId)}/keys`, { keys, requestId }),
-  diff: (worktreeId: string, mode: DiffMode) =>
-    get<DiffResponse>(`/api/worktrees/${encodeId(worktreeId)}/diff?mode=${mode}`),
+  diff: (worktreeId: string, mode: DiffMode, sha?: string) =>
+    get<DiffResponse>(
+      `/api/worktrees/${encodeId(worktreeId)}/diff?mode=${mode}${sha ? `&sha=${encodeURIComponent(sha)}` : ''}`,
+    ),
+  commits: (worktreeId: string, limit?: number) =>
+    get<CommitListResponse>(
+      `/api/worktrees/${encodeId(worktreeId)}/commits${limit ? `?limit=${limit}` : ''}`,
+    ),
   hunkAction: (worktreeId: string, action: HunkAction, req: unknown) =>
     post<HunkActionResult>(`/api/worktrees/${encodeId(worktreeId)}/hunks/${action}`, req),
   hunkComment: (worktreeId: string, req: unknown) =>

@@ -247,3 +247,32 @@ describe('unstagePending', () => {
     await expect(management.unstagePending('wt_000000000000', ['x.txt'])).rejects.toThrow(TargetNotFoundError)
   })
 })
+
+describe('commits + commit diff', () => {
+  test('should list worktree commits newest-first', async () => {
+    const r = await management.commits(wtId(), 50)
+    expect(r.commits.length).toBeGreaterThanOrEqual(1)
+    expect(r.commits.map((c) => c.subject)).toContain('init') // oldest committed first-run
+    expect(r.commits[r.commits.length - 1]?.subject).toBe('init')
+    expect(r.commits[0]?.sha).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  test('should throw TargetNotFoundError for unknown worktrees', async () => {
+    await expect(management.commits('wt_000000000000', 10)).rejects.toThrow(TargetNotFoundError)
+  })
+
+  test('should attach commit metadata in commit-mode diff', async () => {
+    const list = await management.commits(wtId(), 5)
+    const head = list.commits[0]!
+    const d = await management.diff(wtId(), 'commit', head.sha)
+    expect(d.mode).toBe('commit')
+    expect(d.commit?.subject).toBe(head.subject)
+    expect(d.commit?.isMerge).toBe(false)
+    expect(d.files.length).toBeGreaterThanOrEqual(1) // init commit adds base.txt
+  })
+
+  test('should reject commit-mode diff without sha or with unknown rev', async () => {
+    await expect(management.diff(wtId(), 'commit')).rejects.toThrow(BadRequestError)
+    await expect(management.diff(wtId(), 'commit', 'definitely-not-a-rev')).rejects.toThrow(BadRequestError)
+  })
+})

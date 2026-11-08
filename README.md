@@ -164,6 +164,11 @@ protection).
   agents (with an `agent_kind`) are listed — kind-less records such as a
   plain zsh pane running your dev server are filtered out (they aren't
   message targets either).
+- **Commits** — agent-view button opening the worktree's `git log` (newest
+  first, up to 50 shown); each commit opens its diff vs the first parent
+  (merge commits show parent-1 changes; root commits diff against the empty
+  tree). Read-only history view — no staging or worktree actions there.
+
 - **Themes** — Night (default), Gruvbox, and Twilight, switchable from the ⚙
   sheet on the dashboard; the choice is durable (all tabs) and applies to
   every surface including the advanced terminal and the iPhone chrome tint.
@@ -281,14 +286,14 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 300 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 324 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
   divergence, and no-origin blocking; plus the SPEC.md drift harness, which
   fails the suite when routes/env vars/error codes change without updating
   `docs/SPEC.md`).
-- `npx playwright test` — 27 e2e tests at iPhone 13 viewport against the
+- `npx playwright test` — 28 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
   reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
   pending-changes + direct-commit contract and graceful degradation,

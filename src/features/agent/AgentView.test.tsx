@@ -85,6 +85,7 @@ function renderPanel(over: Partial<{ mode: 'reader' | 'terminal'; active: boolea
       onSwitch={() => undefined}
       onPrevious={() => undefined}
       onOpenDiff={() => undefined}
+        onOpenCommits={() => undefined}
       onModeChange={() => undefined}
     />,
   )
@@ -126,6 +127,7 @@ describe('mode control', () => {
         onSwitch={() => undefined}
         onPrevious={() => undefined}
         onOpenDiff={() => undefined}
+        onOpenCommits={() => undefined}
         onModeChange={onModeChange}
       />,
     )
@@ -146,6 +148,7 @@ describe('mode control', () => {
         onSwitch={() => undefined}
         onPrevious={() => undefined}
         onOpenDiff={() => undefined}
+        onOpenCommits={() => undefined}
         onModeChange={() => undefined}
       />,
     )
@@ -171,6 +174,7 @@ describe('mode control', () => {
         onSwitch={() => undefined}
         onPrevious={() => undefined}
         onOpenDiff={() => undefined}
+        onOpenCommits={() => undefined}
         onModeChange={() => undefined}
       />,
     )
@@ -235,5 +239,34 @@ describe('AgentView stop action', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(api.execute).not.toHaveBeenCalled()
+  })
+})
+
+describe('Commits button', () => {
+  it('is disabled when the agent has no git info', () => {
+    renderPanel()
+    expect(screen.getByRole('button', { name: 'Show commit history' })).toBeDisabled()
+  })
+
+  it('opens the commit history for the agent worktree', () => {
+    const onOpenCommits = vi.fn()
+    const withGit = { ...A, git: { branch: 'feat-x', hasStaged: false, hasUnstaged: true, hasUnmergedCommits: false, unborn: false, ahead: 0, behind: 0, pendingChanges: 1 } }
+    render(
+      <AgentViewPanel
+        agent={withGit}
+        agents={[withGit]}
+        recents={['%1']}
+        connection="online"
+        mode="reader"
+        active
+        onSwitch={() => undefined}
+        onPrevious={() => undefined}
+        onOpenDiff={() => undefined}
+        onOpenCommits={onOpenCommits}
+        onModeChange={() => undefined}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show commit history' }))
+    expect(onOpenCommits).toHaveBeenCalledWith('wt_1', 'proj/feat-x')
   })
 })

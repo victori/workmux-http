@@ -659,3 +659,23 @@ original requirements above remain in force unless noted.
   Tradeoff, accepted deliberately: panes running an agent CLI that workmux
   cannot classify are hidden too; upstream kind detection is the source.
 - +2 discovery tests (null/undefined kind excluded; targets exclude them).
+
+### Commit history browser (2026-11-08, plan docs/2026-11-08-commit-log-plan.md)
+- Agent view gains a **Commits** button -> new route/view listing the
+  worktree's `git log` (newest first, default 50, cap `BOUNDS.maxCommits`
+  200); clicking a commit opens the existing DiffView in new
+  `mode=commit`, showing that commit's diff vs FIRST PARENT (root commits
+  fall back to empty-tree diff via `git show --format=`); commit mode is
+  read-only — no mode toggle, pending section, or footer actions; back
+  returns to the list.
+- New `GET /api/worktrees/:id/commits`; `/diff` extended with
+  `mode=commit&sha=` — sha gated by SAFE_REV + `..` rejection (400);
+  `DiffResponse.commit` carries metadata. Broken/nonexistent repo paths
+  degrade to an empty list (spawn-error catch), never a fabricated error.
+- The drift harness caught the new route mid-implementation (SPEC table
+  update required to pass) — first real-world proof of the harness.
+- Verification delta: +24 vitest (324 total: 7 adapter incl. unicode
+  subjects/merge/root-commit/unsafe-rev, 4 service, 3 route, 5 CommitsView,
+  3 DiffView commit-mode, 2 AgentView button) +1 e2e (28 total: graceful
+  degradation + sha validation); typecheck + build clean; live smoke on a
+  spare port against the real repo (list + parent-1 diff of a real commit).

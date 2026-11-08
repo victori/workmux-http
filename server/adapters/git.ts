@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { run } from '../exec.js'
 import { BOUNDS } from '../config.js'
 import { parseDiff, type ParsedFile } from '../hunks.js'
+import type { CommitInfo, CommitListResponse } from '../../shared/types.js'
 
 export interface RepoStatus {
   branch: string | null
@@ -131,6 +132,70 @@ export async function diffWip(cwd: string): Promise<DiffResult> {
 /** Branch changes vs base using merge-base semantics. */
 export async function diffBranch(cwd: string, base: string): Promise<DiffResult> {
   return diffArgs(cwd, ['diff', `${base}...HEAD`, '--no-color', '--unified=3', '--no-ext-diff'])
+}
+
+/** Rev is safe for argv when it passes SAFE_REV and carries no range syntax. */
+function isSafeRev(rev: string): boolean {
+  return SAFE_REV.test(rev) && !rev.includes('..')
+}
+
+/** Commit metadata for one rev (null when the rev does not resolve). */
+export async function commitInfo(cwd: string, sha: string): Promise<CommitInfo | null> {
+  if (!isSafeRev(sha)) return null
+  const res = await run(
+    ['git', 'show', '-s', '--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1f%P', sha],
+    { cwd },
+  )
+  if (res.code !== 0) return null
+  const f = res.stdout.split('\x1f')
+  if (f.length < 6) return null
+  return {
+    sha: f[0] ?? '',
+    short: f[1] ?? '',
+    author: f[2] ?? '',
+    dateSecs: Number(f[3] ?? 0),
+    subject: f[4] ?? '',
+    isMerge: (f[5] ?? '').trim().split(/\s+/).filter((s) => s !== '').length > 1,
+  }
+}
+
+/** Commit list for HEAD, newest first; unborn/broken repo yields an empty list. */
+export async function commitList(cwd: string, limit: number): Promise<CommitListResponse> {
+  const res = await run(
+    ['git', 'log', `-${limit + 1}`, '--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1f%P%x1e', 'HEAD'],
+    { cwd },
+  ).catch(() => null)
+  if (!res || res.code !== 0) return { commits: [], truncated: false }
+  const records = res.stdout
+    .split('\x1e')
+    .map((r) => r.replace(/^\n/, ''))
+    .filter((r) => r !== '')
+  const truncated = records.length > limit
+  const commits = records.slice(0, limit).map((rec) => {
+    const f = rec.split('\x1f')
+    return {
+      sha: f[0] ?? '',
+      short: f[1] ?? '',
+      author: f[2] ?? '',
+      dateSecs: Number(f[3] ?? 0),
+      subject: f[4] ?? '',
+      isMerge: (f[5] ?? '').trim().split(/\s+/).filter((s) => s !== '').length > 1,
+    }
+  })
+  return { commits, truncated }
+}
+
+/**
+ * Diff of one commit against its first parent (merges show parent-1
+ * changes); root commits diff against the empty tree via git show.
+ */
+export async function commitDiff(cwd: string, sha: string): Promise<DiffResult> {
+  if (!isSafeRev(sha)) throw new Error(`unsafe revision: ${sha}`)
+  const parent = await run(['git', 'rev-parse', '--verify', `${sha}^`], { cwd })
+  if (parent.code === 0) {
+    return diffArgs(cwd, ['diff', `${sha}^`, sha, '--no-color', '--unified=3', '--no-ext-diff', '--find-renames'])
+  }
+  return diffArgs(cwd, ['show', '--format=', sha, '--no-color', '--unified=3', '--no-ext-diff'])
 }
 
 async function diffArgs(cwd: string, args: string[]): Promise<DiffResult> {

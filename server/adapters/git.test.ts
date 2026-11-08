@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { addPaths, hasOrigin, push, repoStatus, runCommit, unstagePaths, unpushedCommits } from './git.js'
+import { addPaths, commitDiff, commitInfo, commitList, hasOrigin, push, repoStatus, runCommit, unstagePaths, unpushedCommits } from './git.js'
 
 /**
  * Real-git checks for status parsing, path staging, and the commit runner,
@@ -338,5 +338,86 @@ describe('staged paths and unstage round-trip', () => {
     // mm.txt is not in HEAD, so unstage falls back to untracked — content kept
     expect(s.untracked).toContain('mm.txt')
     expect(readFileSync(path.join(sub, 'mm.txt'), 'utf8')).toBe('one\ntwo\n')
+  })
+})
+
+describe('commit history', () => {
+  let hist: string
+  const gitH = (args: string[]): string => execFileSync('git', args, { cwd: hist, encoding: 'utf8' })
+  let mergeSha = ''
+  let rootSha = ''
+
+  beforeAll(() => {
+    hist = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-hist-'))
+    gitH(['init', '-q', '-b', 'main'])
+    gitH(['config', 'user.email', 'test@test.local'])
+    gitH(['config', 'user.name', 'Test'])
+    gitH(['config', 'commit.gpgsign', 'false'])
+    writeFileSync(path.join(hist, 'a.txt'), 'a\n')
+    gitH(['add', 'a.txt'])
+    gitH(['commit', '-qm', 'root commit'])
+    rootSha = gitH(['rev-parse', 'HEAD']).trim()
+    writeFileSync(path.join(hist, 'b.txt'), 'b\n')
+    gitH(['add', 'b.txt'])
+    gitH(['commit', '-qm', 'café ☕ subject with unicode'])
+    gitH(['checkout', '-q', '-b', 'side'])
+    writeFileSync(path.join(hist, 'c.txt'), 'c\n')
+    gitH(['add', 'c.txt'])
+    gitH(['commit', '-qm', 'side change'])
+    gitH(['checkout', '-q', 'main'])
+    gitH(['merge', '-q', '--no-ff', '-m', 'merge side', 'side'])
+    mergeSha = gitH(['rev-parse', 'HEAD']).trim()
+  })
+
+  afterAll(() => {
+    if (hist) rmSync(hist, { recursive: true, force: true })
+  })
+
+  test('should list commits newest-first with unicode subjects and merge flag', async () => {
+    const r = await commitList(hist, 10)
+    expect(r.truncated).toBe(false)
+    expect(r.commits[0]).toMatchObject({ sha: mergeSha, subject: 'merge side', isMerge: true })
+    expect(r.commits[1]?.subject).toBe('café ☕ subject with unicode') // main parent first
+    expect(r.commits.map((c) => c.isMerge)).toEqual([true, false, false, false])
+    expect(r.commits[2]?.subject).toBe('side change')
+    expect(r.commits[3]?.sha).toBe(rootSha)
+  })
+
+  test('should truncate at limit and report truncated', async () => {
+    const r = await commitList(hist, 2)
+    expect(r.commits).toHaveLength(2)
+    expect(r.truncated).toBe(true)
+  })
+
+  test('should return empty list for unborn repo', async () => {
+    const empty = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-unborn-'))
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: empty })
+      expect(await commitList(empty, 10)).toEqual({ commits: [], truncated: false })
+    } finally {
+      rmSync(empty, { recursive: true, force: true })
+    }
+  })
+
+  test('should diff a commit against its first parent', async () => {
+    const d = await commitDiff(hist, mergeSha)
+    expect(d.files.map((f) => f.path)).toEqual(['c.txt']) // parent-1 sees only side's change
+  })
+
+  test('should diff root commit against the empty tree', async () => {
+    const d = await commitDiff(hist, rootSha)
+    expect(d.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(d.files[0]?.status).toBe('added')
+  })
+
+  test('should reject unsafe revisions', async () => {
+    await expect(commitDiff(hist, 'main..side')).rejects.toThrow(/unsafe/)
+    await expect(commitDiff(hist, '--output=x')).rejects.toThrow(/unsafe/)
+    expect(await commitInfo(hist, 'no-such-rev-xyz')).toBeNull()
+  })
+
+  test('should resolve commit metadata by short sha', async () => {
+    const info = await commitInfo(hist, mergeSha.slice(0, 8))
+    expect(info).toMatchObject({ sha: mergeSha, subject: 'merge side', isMerge: true, author: 'Test' })
   })
 })

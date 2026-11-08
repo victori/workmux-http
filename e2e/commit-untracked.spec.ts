@@ -58,6 +58,20 @@ test.describe('pending changes and commit (fixture mode)', () => {
     expect(empty.status()).toBe(400)
   })
 
+  test('commits endpoint degrades gracefully and validates sha', async ({ request }) => {
+    const dash = await (await request.get('/api/dashboard')).json()
+    const id = dash.worktrees.find((w: { handle: string }) => w.handle === 'feat-timezone').id
+    // fixture paths are not real repos -> git log fails -> empty list, not an error
+    const res = await request.get(`/api/worktrees/${encodeURIComponent(id)}/commits`)
+    expect(res.status()).toBe(200)
+    expect(await res.json()).toMatchObject({ commits: [], truncated: false })
+
+    const noSha = await request.get(`/api/worktrees/${encodeURIComponent(id)}/diff?mode=commit`)
+    expect(noSha.status()).toBe(400)
+    const range = await request.get(`/api/worktrees/${encodeURIComponent(id)}/diff?mode=commit&sha=main..HEAD`)
+    expect(range.status()).toBe(400)
+  })
+
   test('commit accepts an empty message', async ({ request }) => {
     const dash = await (await request.get('/api/dashboard')).json()
     const id = dash.worktrees.find((w: { handle: string }) => w.handle === 'feat-timezone').id

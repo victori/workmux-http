@@ -133,14 +133,14 @@ describe('DiffView', () => {
     expect(screen.getByText('Hunk 1 · @@ -1,3 +1,4 @@')).toBeInTheDocument()
     expect(screen.getByText('+added line')).toBeInTheDocument()
     expect(screen.getByText('-removed line')).toBeInTheDocument()
-    expect(mockApi.diff).toHaveBeenCalledWith('wt_1', 'wip')
+    expect(mockApi.diff).toHaveBeenCalledWith('wt_1', 'wip', undefined)
   })
 
   it('refetches with branch mode when Review is selected', async () => {
     renderView()
     await screen.findByText('src/a.ts')
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
-    await waitFor(() => expect(mockApi.diff).toHaveBeenCalledWith('wt_1', 'branch'))
+    await waitFor(() => expect(mockApi.diff).toHaveBeenCalledWith('wt_1', 'branch', undefined))
   })
 
   it('shows explicit base-missing message in review mode without assuming main', async () => {
@@ -460,5 +460,50 @@ describe('staged rows (Restore)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Restore already-staged\.txt/ }))
     expect(await screen.findByRole('status')).toHaveTextContent('not staged')
     expect(await screen.findByRole('status')).toHaveTextContent('already-staged.txt')
+  })
+})
+
+describe('commit mode (from Commits list)', () => {
+  const commit = {
+    sha: 'c'.repeat(40),
+    short: 'ccccccc',
+    author: 'Vic',
+    dateSecs: 1780000000,
+    subject: 'feat: shipped thing',
+    isMerge: false,
+  }
+  const commitDiffResp: DiffResponse = {
+    ...wipDiff,
+    mode: 'commit',
+    base: 'ccccccc',
+    commit,
+    untracked: [],
+    staged: [],
+    hasStaged: false,
+  }
+
+  it('loads the commit diff by sha and shows subject vs parent', async () => {
+    const diff = vi.spyOn(api, 'diff').mockResolvedValue(commitDiffResp)
+    render(<DiffView worktreeId="wt_1" label="proj/feat" commit={commit} onClose={() => {}} connection="online" />)
+    expect(diff).toHaveBeenCalledWith('wt_1', 'commit', commit.sha)
+    expect(await screen.findByText('feat: shipped thing')).toBeInTheDocument()
+    expect(screen.getByText(/vs parent · Vic/)).toBeInTheDocument()
+  })
+
+  it('hides WIP/Review toggle and worktree actions in commit mode', async () => {
+    vi.spyOn(api, 'diff').mockResolvedValue(commitDiffResp)
+    render(<DiffView worktreeId="wt_1" label="proj/feat" commit={commit} onClose={() => {}} connection="online" /> )
+    await screen.findByText('feat: shipped thing')
+    expect(screen.queryByRole('group', { name: 'diff mode' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Merge/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Pending changes')).not.toBeInTheDocument()
+  })
+
+  it('back button returns to the commits list', async () => {
+    vi.spyOn(api, 'diff').mockResolvedValue(commitDiffResp)
+    const onClose = vi.fn()
+    render(<DiffView worktreeId="wt_1" label="proj/feat" commit={commit} onClose={onClose} connection="online" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Close diff' }))
+    expect(onClose).toHaveBeenCalled()
   })
 })

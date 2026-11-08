@@ -110,3 +110,23 @@ describe('unstage route', () => {
     expect(res.json().error).toBe('target_not_found')
   })
 })
+
+describe('commits routes', () => {
+  it('returns 404 target_not_found for unknown worktree commits', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/worktrees/wt_000000000000/commits', headers: { host: 'localhost' } })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().error).toBe('target_not_found')
+  })
+
+  it('rejects commit-mode diff without sha', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/worktrees/wt_000000000000/diff?mode=commit', headers: { host: 'localhost' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('invalid_request')
+  })
+
+  it('rejects range syntax in the sha parameter', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/worktrees/wt_000000000000/diff?mode=commit&sha=main..HEAD', headers: { host: 'localhost' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('invalid_request')
+  })
+})

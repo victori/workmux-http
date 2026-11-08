@@ -24,6 +24,7 @@ export interface AgentViewPanelProps {
   onSwitch: (id: string) => void
   onPrevious: () => void
   onOpenDiff: (id: string, label: string) => void
+  onOpenCommits: (id: string, label: string) => void
   onModeChange: (mode: AgentMode) => void
 }
 
@@ -44,6 +45,7 @@ export function AgentViewPanel({
   onSwitch,
   onPrevious,
   onOpenDiff,
+  onOpenCommits,
   onModeChange,
 }: AgentViewPanelProps) {
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -131,6 +133,14 @@ export function AgentViewPanel({
                 className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
               >
                 Diff
+              </button>
+              <button
+                onClick={() => onOpenCommits(agent.worktreeId, `${agent.project}/${agent.git?.branch ?? agent.name}`)}
+                disabled={!agent.git}
+                aria-label="Show commit history"
+                className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted disabled:opacity-45"
+              >
+                Commits
               </button>
               <button
                 onClick={askStop}

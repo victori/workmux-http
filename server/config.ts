@@ -107,6 +107,8 @@ export const BOUNDS = {
   maxOutputLines: 2000,
   defaultOutputLines: 400,
   maxDiffBytes: 1024 * 1024,
+  maxCommits: 200,
+  defaultCommits: 50,
   maxHunkCommentChars: 8000,
   dedupTtlMs: 300000,
   dedupMaxEntries: 1000,

@@ -128,7 +128,22 @@ export interface DeliveryResult {
   detail?: string
 }
 
-export type DiffMode = 'wip' | 'branch'
+export type DiffMode = 'wip' | 'branch' | 'commit'
+
+/** One commit from git log (newest first). */
+export interface CommitInfo {
+  sha: string
+  short: string
+  author: string
+  dateSecs: number
+  subject: string
+  isMerge: boolean
+}
+
+export interface CommitListResponse {
+  commits: CommitInfo[]
+  truncated: boolean
+}
 
 export type FileChangeStatus =
   | 'modified'
@@ -165,6 +180,8 @@ export interface DiffResponse {
   worktreeId: string
   mode: DiffMode
   base: string | null
+  /** Present in commit mode: the commit whose diff is shown. */
+  commit?: CommitInfo
   /** Set when branch mode cannot resolve a configured base branch. */
   baseMissing: boolean
   unborn: boolean

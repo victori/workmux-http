@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AgentView } from '@shared/types'
+import type { AgentView, CommitInfo } from '@shared/types'
 import { useDashboard } from './hooks/useDashboard'
 import { loadTab, saveTab } from './lib/storage'
 import { THEMES, applyTheme, loadThemeId, saveThemeId } from './lib/themes'
@@ -8,6 +8,7 @@ import { DashboardView } from './features/dashboard/DashboardView'
 import { SessionsView } from './features/dashboard/SessionsView'
 import { AgentViewPanel } from './features/agent/AgentView'
 import { DiffView } from './features/worktrees/DiffView'
+import { CommitsView } from './features/worktrees/CommitsView'
 import { CreateWorktreeSheet } from './features/worktrees/CreateWorktreeSheet'
 import { TerminalView } from './features/terminal/TerminalView'
 import { CommandPalette } from './features/palette/CommandPalette'
@@ -18,7 +19,8 @@ type Route =
   | { view: 'dashboard' }
   | { view: 'sessions' }
   | { view: 'agent'; mode: AgentMode }
-  | { view: 'diff'; worktreeId: string; label: string }
+  | { view: 'diff'; worktreeId: string; label: string; commit?: CommitInfo; from?: 'commits' }
+  | { view: 'commits'; worktreeId: string; label: string }
 
 const NAV_TABS = [
   { view: 'dashboard', label: 'Dashboard', icon: '▦' },
@@ -87,7 +89,7 @@ export default function App() {
         if (paletteOpen || createOpen) {
           setPaletteOpen(false)
           setCreateOpen(false)
-        } else if (route.view === 'diff') {
+        } else if (route.view === 'diff' || route.view === 'commits') {
           setRoute({ view: 'agent', mode: 'reader' })
         } else if (route.view === 'agent' && route.mode === 'terminal') {
           setRoute({ view: 'agent', mode: 'reader' })
@@ -216,6 +218,7 @@ export default function App() {
                 onSwitch={openAgent}
                 onPrevious={goPrevious}
                 onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
+                onOpenCommits={(id, label) => setRoute({ view: 'commits', worktreeId: id, label })}
                 onModeChange={(mode) => setRoute({ view: 'agent', mode })}
               />
             </>
@@ -224,8 +227,24 @@ export default function App() {
             <DiffView
               worktreeId={route.worktreeId}
               label={route.label}
+              commit={route.commit}
+              onClose={() =>
+                route.from === 'commits'
+                  ? setRoute({ view: 'commits', worktreeId: route.worktreeId, label: route.label })
+                  : setRoute(currentAgent ? { view: 'agent', mode: 'reader' } : { view: 'dashboard' })
+              }
+              connection={dash.connection}
+            />
+          )}
+          {route.view === 'commits' && (
+            <CommitsView
+              worktreeId={route.worktreeId}
+              label={route.label}
               onClose={() => setRoute(currentAgent ? { view: 'agent', mode: 'reader' } : { view: 'dashboard' })}
               connection={dash.connection}
+              onOpenCommit={(c) =>
+                setRoute({ view: 'diff', worktreeId: route.worktreeId, label: route.label, commit: c, from: 'commits' })
+              }
             />
           )}
         </div>

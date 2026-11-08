@@ -8,6 +8,7 @@ import { loadConfig, BOUNDS, type AppConfig } from './config.js'
 import { checkRequest } from './security.js'
 import { Tmux } from './adapters/tmux.js'
 import { Workmux, DependencyError } from './adapters/workmux.js'
+import { SAFE_REV } from './adapters/git.js'
 import { Discovery } from './services/discovery.js'
 import { InputService, TargetGoneError, UnknownDeliveryError } from './services/input.js'
 import { Management, BadRequestError, TargetNotFoundError, ConfirmationError } from './services/management.js'
@@ -29,7 +30,14 @@ const OutputQuery = z.object({
   lines: z.coerce.number().int().min(10).max(BOUNDS.maxOutputLines).catch(BOUNDS.defaultOutputLines),
 })
 
-const DiffQuery = z.object({ mode: z.enum(['wip', 'branch']).catch('wip') })
+const DiffQuery = z.object({
+  mode: z.enum(['wip', 'branch', 'commit']).catch('wip'),
+  sha: z.string().min(1).max(64).optional(),
+})
+
+const CommitsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(BOUNDS.maxCommits).catch(BOUNDS.defaultCommits),
+})
 
 const TerminalClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('attach'), agentId: z.string().min(1).max(64), cols: z.number().int(), rows: z.number().int() }),
@@ -237,9 +245,24 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
 
   app.get('/api/worktrees/:id/diff', async (req, reply) => {
     const { id } = IdParams.parse(req.params)
-    const { mode } = DiffQuery.parse(req.query)
+    const { mode, sha } = DiffQuery.parse(req.query)
+    if (mode === 'commit') {
+      if (!sha || !SAFE_REV.test(sha) || sha.includes('..')) {
+        return reply.code(400).send({ error: 'invalid_request', detail: 'valid sha required for commit diff' })
+      }
+    }
     try {
-      return await management.diff(id, mode)
+      return await management.diff(id, mode, sha)
+    } catch (err) {
+      return mgmtReply(reply, err)
+    }
+  })
+
+  app.get('/api/worktrees/:id/commits', async (req, reply) => {
+    const { id } = IdParams.parse(req.params)
+    const { limit } = CommitsQuery.parse(req.query)
+    try {
+      return await management.commits(id, limit)
     } catch (err) {
       return mgmtReply(reply, err)
     }

@@ -62,7 +62,8 @@ way. Static SPA responses: HTML is `no-cache`, hashed assets immutable.
 | `GET /api/agents/:id/output` | captured pane text (reader mode) |
 | `POST /api/agents/:id/messages` | literal message delivery (paste-buffer + Enter) |
 | `POST /api/agents/:id/keys` | explicit key strokes |
-| `GET /api/worktrees/:id/diff` | `mode=wip\|branch`; files + pending lists |
+| `GET /api/worktrees/:id/diff` | `mode=wip\|branch\|commit`; files + pending lists; commit mode takes `&sha=` (SAFE_REV, no `..`) |
+| `GET /api/worktrees/:id/commits` | `git log` list (`CommitInfo[]`, newest first, limit ≤ 200) |
 | `POST /api/worktrees/:id/hunks/:action` | `stage\|unstage\|split` one hunk/piece |
 | `POST /api/worktrees/:id/add` | stage exact paths (`AddResult`) |
 | `POST /api/worktrees/:id/unstage` | unstage exact paths (`AddResult`) |
@@ -196,7 +197,10 @@ the visible viewport, never the expanded grid.
   list and message targets.
 - **Agent view**: reader mode (captured output, opens at tail) ↔ terminal
   mode (live WS, mode header, pane-target warning); composer + explicit
-  keys; session switcher; previous-agent action.
+  keys; session switcher; previous-agent action; **Commits** button (hidden
+  git-less) opening the commit-history list (`/commits`), where each row
+  opens that commit's diff vs first parent (read-only DiffView: no mode
+  toggle, no pending section, no footer actions).
 - **Diff view**: file sidebar, wip/branch modes, hunk stage/unstage/split +
   comments, pending-changes section (Add ↔ Restore flip per staged state,
   Add all / Restore all), Commit-now box (disabled when clean), push button
