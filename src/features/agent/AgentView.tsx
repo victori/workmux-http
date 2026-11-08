@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { AgentView, PreparedAction } from '@shared/types'
 import type { ConnectionState } from '../../hooks/useDashboard'
-import { api } from '../../lib/api'
+import { api, newRequestId } from '../../lib/api'
 import { StatusBadge } from '../../components/StatusBadge'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { OutputPane } from './OutputPane'
@@ -67,7 +67,7 @@ export function AgentViewPanel({
         targetId: agent.id,
         acceptWarnings,
         confirmToken: stopPrepared.confirmToken,
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
       })
       .then(async (op) => {
         for (let i = 0; i < 30; i++) {

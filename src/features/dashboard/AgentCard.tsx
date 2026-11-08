@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentView, OperationView, PreparedAction } from '@shared/types'
-import { api, ApiError } from '../../lib/api'
+import { api, ApiError, newRequestId } from '../../lib/api'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { StatusBadge } from '../../components/StatusBadge'
 import { humanizeElapsed } from './agentSort'
@@ -63,7 +63,7 @@ export function AgentCard({
         targetId: agent.worktreeId,
         acceptWarnings,
         confirmToken: token,
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
       })
       const final = await pollOperation(op.id, () => cancelledRef.current)
       setNote(
@@ -74,7 +74,11 @@ export function AgentCard({
             : final.error ?? `push ${final.state}`,
       )
     } catch (err) {
-      setNote(err instanceof ApiError ? err.message : 'push failed')
+      setNote(
+        err instanceof ApiError
+          ? err.message
+          : `push failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     } finally {
       setBusy(false)
     }

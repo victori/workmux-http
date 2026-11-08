@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { OperationView, ProjectInfo } from '@shared/types'
-import { api } from '../../lib/api'
+import { api, newRequestId } from '../../lib/api'
 
 const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/
 
@@ -81,7 +81,7 @@ export function CreateWorktreeSheet({ onClose }: CreateWorktreeSheetProps) {
         ...(prompt.trim() !== '' ? { prompt: prompt } : {}),
         ...(agent !== '' ? { agent } : {}),
         ...(baseBranch.trim() !== '' ? { baseBranch: baseBranch.trim() } : {}),
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
       })
       .then(setOp)
       .catch((err: unknown) =>

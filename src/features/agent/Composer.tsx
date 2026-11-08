@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import type { AgentView, KeyName } from '@shared/types'
 import type { ConnectionState } from '../../hooks/useDashboard'
-import { api, ApiError } from '../../lib/api'
+import { api, ApiError, newRequestId } from '../../lib/api'
 import { copyText, loadTab, saveTab } from '../../lib/storage'
 import { useVisualViewport } from '../../hooks/useVisualViewport'
 
@@ -102,7 +102,7 @@ export function Composer({ agent, connection, outputRef }: ComposerProps) {
     const trimmed = textRef.current.trim()
     if (!trimmed) return
     const targetId = agent.id
-    const requestId = crypto.randomUUID()
+    const requestId = newRequestId()
     setSending(true)
     setNotice(null)
     api
@@ -122,7 +122,7 @@ export function Composer({ agent, connection, outputRef }: ComposerProps) {
   function sendKey(key: KeyName): void {
     if (!agent || disabled || sending) return
     const targetId = agent.id
-    const requestId = crypto.randomUUID()
+    const requestId = newRequestId()
     setNotice(null)
     api.keys(targetId, [key], requestId).catch(onApiError)
     setCtrlArmed(false)

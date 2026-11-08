@@ -6,7 +6,7 @@ import { DiffView } from './DiffView'
 
 afterEach(cleanup)
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (orig) => ({...(await orig() as object),
   api: {
     diff: vi.fn(),
     dashboard: vi.fn(),

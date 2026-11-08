@@ -23,7 +23,7 @@ if (typeof globalThis.localStorage === 'undefined') {
   Object.defineProperty(globalThis, 'sessionStorage', { value: memoryStorage(), configurable: true })
 }
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (orig) => ({...(await orig() as object),
   ApiError: class extends Error {
     status = 0
     body = {}

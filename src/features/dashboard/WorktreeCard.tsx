@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ActionType, OperationView, PreparedAction, WorktreeView } from '@shared/types'
-import { api, ApiError } from '../../lib/api'
+import { api, ApiError, newRequestId } from '../../lib/api'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { StatusDots } from '../../components/StatusBadge'
 import { truncateMiddle } from './agentSort'
@@ -68,7 +68,7 @@ export function WorktreeCard({
         targetId: worktree.id,
         acceptWarnings,
         confirmToken: token,
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
       })
       const final = await pollOperation(op.id, () => cancelledRef.current)
       if (final) {

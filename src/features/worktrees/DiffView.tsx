@@ -7,7 +7,7 @@ import type {
   OperationView,
   PreparedAction,
 } from '@shared/types'
-import { api } from '../../lib/api'
+import { api, newRequestId } from '../../lib/api'
 import type { ConnectionState } from '../../hooks/useDashboard'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { HunkList, hunkKey } from './HunkList'
@@ -306,7 +306,7 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
   function sendCommit(): void {
     if (!commitAgent) return
     api
-      .message(commitAgent.id, 'commit', crypto.randomUUID())
+      .message(commitAgent.id, 'commit', newRequestId())
       .then((r) =>
         setCommitNote(r.delivered === 'sent' ? 'commit instruction sent' : 'delivery uncertain'),
       )
@@ -330,7 +330,7 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
         targetId: worktreeId,
         acceptWarnings,
         confirmToken: prepared.confirmToken,
-        requestId: crypto.randomUUID(),
+        requestId: newRequestId(),
       })
       .then((o) => {
         setPrepared(null)

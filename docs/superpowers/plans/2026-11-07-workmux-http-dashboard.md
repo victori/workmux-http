@@ -503,3 +503,12 @@ original requirements above remain in force unless noted.
   (shows ●3, hidden at 0/no-git), +1 e2e assertion (fixture mode renders
   no ● badge) = 235 vitest / 26 Playwright. Live smoke: real fleet
   workmux-http agent pendingChanges=8, ahead=1.
+- Follow-up 4 (same day): root-caused live "push failed" on iPhone over
+  LAN — crypto.randomUUID is secure-context-gated; the dashboard runs over
+  plain http on a LAN address, so Safari left it undefined and execute
+  threw client-side before any request (commit/add were unaffected — they
+  send no requestId). New `newRequestId()` in lib/api.ts (randomUUID when
+  available, time+random fallback) used at all 8 mutation call sites;
+  AgentCard now surfaces the underlying error message instead of the bare
+  "push failed". +3 api unit tests = 238 vitest. Test mocks of lib/api
+  now spread the real module so util exports survive vi.mock.

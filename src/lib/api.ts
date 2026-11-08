@@ -19,6 +19,25 @@ import type {
 
 export const MUTATION_HEADER = { 'x-workmux-request': '1' }
 
+/**
+ * requestId for mutation dedupe. crypto.randomUUID is gated to secure
+ * contexts; the dashboard runs over plain http on a LAN/VPN address from
+ * the phone, where Safari leaves it undefined — fall back to a unique
+ * time+random id (dedupe only needs uniqueness, not entropy quality).
+ */
+export function newRequestId(): string {
+  const c: Crypto | undefined = typeof crypto !== 'undefined' ? crypto : undefined
+  if (typeof c?.randomUUID === 'function') {
+    try {
+      return c.randomUUID()
+    } catch {
+      /* non-secure context throw — fall through */
+    }
+  }
+  const rnd = () => Math.random().toString(36).slice(2, 10)
+  return `r-${Date.now().toString(36)}-${rnd()}${rnd()}`
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly body: Record<string, unknown>

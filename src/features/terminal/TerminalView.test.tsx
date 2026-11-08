@@ -64,7 +64,7 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }))
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (orig) => ({...(await orig() as object),
   api: {},
   ApiError: class ApiError extends Error {},
   terminalWsUrl: () => 'ws://test/api/terminal',
