@@ -11,7 +11,8 @@ export default defineConfig({
   },
   projects: [{ name: 'iPhone Safari-like', ...devices['iPhone 13'], browserName: 'chromium' }],
   webServer: {
-    command: 'npm run build && WORKMUX_HTTP_PORT=4173 WORKMUX_HTTP_FIXTURES=$PWD/fixtures npm start',
+    command:
+      'npm run build && WORKMUX_HTTP_PORT=4173 WORKMUX_HTTP_FIXTURES=$PWD/fixtures WORKMUX_CLAUDE_COMMIT_CMD="/usr/bin/true" npm start',
     url: 'http://127.0.0.1:4173/api/health',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -163,8 +163,35 @@ export interface DiffResponse {
   snapshotId: string
   files: DiffFile[]
   untracked: string[]
+  /** Tracked files with worktree-side changes not fully staged. */
+  unstaged: string[]
+  /** Unmerged paths; addable only after conflict resolution. */
+  conflicts: string[]
+  hasStaged: boolean
+  /** Resolved commit command for this worktree's agent kind; null keeps agent commit. */
+  commitCmd: string | null
   truncated: boolean
   observedAt: number
+}
+
+export interface AddRequest {
+  paths: string[]
+}
+
+export interface AddResult {
+  ok: boolean
+  message?: string
+  /** Paths no longer pending on the server (client should refresh). */
+  offenders?: string[]
+}
+
+export interface CommitRequest {
+  /** Optional; empty/omitted = the commit command runs with no message arg. */
+  message?: string
+}
+
+export interface CommitAccepted {
+  operationId: string
 }
 
 export type HunkAction = 'stage' | 'unstage' | 'split'

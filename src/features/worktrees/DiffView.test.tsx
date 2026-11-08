@@ -16,6 +16,8 @@ vi.mock('../../lib/api', () => ({
     prepare: vi.fn(),
     execute: vi.fn(),
     operation: vi.fn(),
+    addPaths: vi.fn(),
+    commit: vi.fn(),
   },
 }))
 
@@ -52,6 +54,10 @@ const wipDiff: DiffResponse = {
     },
   ],
   untracked: [],
+  unstaged: [],
+  conflicts: [],
+  hasStaged: false,
+  commitCmd: null,
   truncated: false,
   observedAt: 1,
 }
@@ -214,5 +220,141 @@ describe('DiffView', () => {
         }),
       ),
     )
+  })
+})
+
+const pendingDiff: DiffResponse = {
+  ...wipDiff,
+  untracked: ['new1.txt'],
+  unstaged: ['base.txt'],
+  conflicts: ['clash.txt'],
+  commitCmd: 'opencode-commit',
+}
+
+describe('DiffView pending changes and direct commit', () => {
+  it('lists untracked, unstaged, and conflicts with add controls', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    renderView()
+    const section = await screen.findByRole('region', { name: 'Pending changes' })
+    expect(within(section).getByText('new1.txt')).toBeInTheDocument()
+    expect(within(section).getByText('base.txt')).toBeInTheDocument()
+    expect(within(section).getByText('clash.txt')).toBeInTheDocument()
+    fireEvent.click(within(section).getByRole('button', { name: 'Add all (2)' }))
+    expect(mockApi.addPaths).toHaveBeenCalledWith('wt_1', ['new1.txt', 'base.txt'])
+    expect(mockApi.addPaths.mock.calls[0]![1]).not.toContain('clash.txt')
+  })
+
+  it('reports stale add offenders and reloads the diff', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    mockApi.addPaths.mockResolvedValue({ ok: false, message: 'paths are no longer pending', offenders: ['ghost.txt'] })
+    renderView()
+    const section = await screen.findByRole('region', { name: 'Pending changes' })
+    fireEvent.click(within(section).getByRole('button', { name: 'Add all (2)' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(/ghost\.txt/)
+    await waitFor(() => expect(mockApi.diff.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('replaces the agent commit button with CommitBar when a command is configured', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    mockApi.commit.mockResolvedValue({ operationId: 'op-9' })
+    mockApi.operation.mockResolvedValue({
+      id: 'op-9',
+      kind: 'commit',
+      target: 'feat',
+      state: 'done',
+      output: '1 file changed',
+      error: null,
+      startedAt: 1,
+      endedAt: 2,
+    })
+    renderView()
+    const input = await screen.findByRole('textbox', { name: 'Commit message' })
+    expect(screen.queryByRole('button', { name: 'Commit' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Commit now' })).toBeInTheDocument()
+    fireEvent.change(input, { target: { value: 'feat: direct' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit now' }))
+    await waitFor(() => expect(mockApi.commit).toHaveBeenCalledWith('wt_1', 'feat: direct'))
+    expect(await screen.findByText('committed')).toBeInTheDocument()
+  })
+
+  it('submits with an empty message when none is typed', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    mockApi.commit.mockResolvedValue({ operationId: 'op-12' })
+    mockApi.operation.mockResolvedValue({
+      id: 'op-12',
+      kind: 'commit',
+      target: 'feat',
+      state: 'done',
+      output: 'ok',
+      error: null,
+      startedAt: 1,
+      endedAt: 2,
+    })
+    renderView()
+    await screen.findByRole('textbox', { name: 'Commit message' })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit now' }))
+    await waitFor(() => expect(mockApi.commit).toHaveBeenCalledWith('wt_1', ''))
+    expect(await screen.findByText('committed')).toBeInTheDocument()
+  })
+
+  it('keeps the agent commit button when no command is configured', async () => {
+    renderView()
+    expect(await screen.findByRole('button', { name: 'Commit' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Commit now' })).not.toBeInTheDocument()
+  })
+
+  it('surfaces a failed commit operation with its error', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    mockApi.commit.mockResolvedValue({ operationId: 'op-10' })
+    mockApi.operation.mockResolvedValue({
+      id: 'op-10',
+      kind: 'commit',
+      target: 'feat',
+      state: 'failed',
+      output: null,
+      error: 'commit failed (exit 1)',
+      startedAt: 1,
+      endedAt: 2,
+    })
+    renderView()
+    const input = await screen.findByRole('textbox', { name: 'Commit message' })
+    fireEvent.change(input, { target: { value: 'bad msg' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit now' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/commit failed \(exit 1\)/)
+  })
+
+  it('shows a busy spinner while the commit operation runs', async () => {
+    mockApi.diff.mockResolvedValue(pendingDiff)
+    mockApi.commit.mockResolvedValue({ operationId: 'op-11' })
+    mockApi.operation
+      .mockResolvedValueOnce({
+        id: 'op-11',
+        kind: 'commit',
+        target: 'feat',
+        state: 'running',
+        output: null,
+        error: null,
+        startedAt: 1,
+        endedAt: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'op-11',
+        kind: 'commit',
+        target: 'feat',
+        state: 'done',
+        output: 'ok',
+        error: null,
+        startedAt: 1,
+        endedAt: 2,
+      })
+    renderView()
+    const input = await screen.findByRole('textbox', { name: 'Commit message' })
+    fireEvent.change(input, { target: { value: 'feat: slow' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit now' }))
+    const busyButton = await screen.findByRole('button', { name: /committing/i })
+    expect(busyButton).toBeDisabled()
+    expect(busyButton).toHaveAttribute('aria-busy', 'true')
+    expect(await screen.findByText('committed', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Commit now' })).toBeEnabled()
   })
 })

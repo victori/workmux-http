@@ -11,11 +11,40 @@ export interface RepoStatus {
   ahead: number
   behind: number
   untracked: string[]
+  /** Tracked files with worktree-side changes not fully staged. */
+  unstaged: string[]
+  /** Unmerged paths. */
+  conflicts: string[]
 }
 
 export interface DiffResult {
   files: ParsedFile[]
   truncated: boolean
+}
+
+/**
+ * Extract XY codes and the (first) path from a porcelain v2 entry line.
+ * '1': kind XY sub m1 m2 m3 s1 s2 path (6 after XY).
+ * '2': + Xscore + path:dst (7 after XY).
+ * 'u': sub + 4 modes + 3 shas + path (8 after XY).
+ * Git C-quotes special paths ("…"); common escapes are undone.
+ */
+function entryFields(line: string): { xy: string; path: string } | null {
+  const kind = line[0]
+  if (kind !== '1' && kind !== '2' && kind !== 'u') return null
+  const fieldsAfterXy = kind === '1' ? 6 : kind === '2' ? 7 : 8
+  const re = new RegExp(`^${kind} (\\S{2}) (?:\\S+ ){${fieldsAfterXy}}(.+)$`)
+  const m = re.exec(line)
+  if (!m) return null
+  let path = m[2]!
+  if (kind === '2') {
+    const sep = path.indexOf(': ')
+    if (sep > 0) path = path.slice(0, sep)
+  }
+  if (path.startsWith('"') && path.endsWith('"')) {
+    path = path.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+  }
+  return { xy: m[1]!, path }
 }
 
 /** Per-repository git facts computed locally; replaces the fragile upstream `status --all --git`. */
@@ -32,6 +61,8 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     ahead: 0,
     behind: 0,
     untracked: [],
+    unstaged: [],
+    conflicts: [],
   }
   for (const line of res.stdout.split('\n')) {
     if (!line) continue
@@ -47,10 +78,17 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
       status.ahead = Number(ahead ?? 0)
       status.behind = Math.abs(Number(behind ?? 0))
     } else if (line.startsWith('1 ') || line.startsWith('2 ') || line.startsWith('u ')) {
-      const xy = line.slice(1, 3)
+      const entry = entryFields(line)
+      if (!entry) continue
+      const { xy, path } = entry
       if (xy[0] !== '.') status.hasStaged = true
       if (xy[1] !== '.') status.hasUnstaged = true
-      if (line.startsWith('u ')) status.hasStaged = true
+      if (line.startsWith('u ')) {
+        status.hasStaged = true
+        status.conflicts.push(path)
+      } else if (xy[1] !== '.') {
+        status.unstaged.push(path)
+      }
     } else if (line.startsWith('? ')) {
       status.untracked.push(line.slice(2))
     }
@@ -102,6 +140,26 @@ export async function applyToIndex(
     return { ok: false, error: res.stderr.trim() || `git apply exit ${res.code}` }
   }
   return { ok: true, error: null }
+}
+
+/** Stage exact paths (validated by the caller) untracked or unstaged alike. */
+export async function addPaths(cwd: string, paths: string[]): Promise<void> {
+  const res = await run(['git', 'add', '--', ...paths], { cwd })
+  if (res.code !== 0) {
+    throw new Error(`git add failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
+  }
+}
+
+export interface CommitRun {
+  code: number
+  stdout: string
+  stderr: string
+}
+
+/** Run the operator-configured commit argv in the worktree. */
+export async function runCommit(cwd: string, argv: string[], timeoutMs: number): Promise<CommitRun> {
+  const res = await run(argv, { cwd, timeoutMs })
+  return { code: res.code, stdout: res.stdout, stderr: res.stderr }
 }
 
 /** Resolve base branch: .workmux.yaml base_branch, then origin/HEAD, else null. */

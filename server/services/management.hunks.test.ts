@@ -130,7 +130,7 @@ beforeAll(() => {
 
   const cfg = { ...loadConfig({}), fixtureDir }
   discovery = new Discovery(cfg, idleTmux, new Workmux())
-  management = new Management(idleTmux, new Workmux(), discovery, new Operations())
+  management = new Management(cfg, idleTmux, new Workmux(), discovery, new Operations())
 })
 
 afterAll(() => {
@@ -223,7 +223,7 @@ describe('Management hunk staging (real git)', () => {
     git(['update-ref', '-d', 'HEAD'])
     const fresh = { ...loadConfig({}), fixtureDir }
     const d2 = new Discovery(fresh, idleTmux, new Workmux())
-    const m2 = new Management(idleTmux, new Workmux(), d2, new Operations())
+    const m2 = new Management(fresh, idleTmux, new Workmux(), d2, new Operations())
     const diff = await m2.diff(wtId(), 'wip')
     expect(diff.unborn).toBe(true)
     expect(diff.baseMissing).toBe(false)

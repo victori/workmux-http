@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import type {
   ActionType,
+  AddResult,
+  AgentView,
   DiffMode,
   DiffResponse,
   HunkActionResult,
@@ -9,7 +11,8 @@ import type {
   CreateWorktreeRequest,
   OperationView,
 } from '../../shared/types.js'
-import { BOUNDS } from '../config.js'
+import { BOUNDS, type AppConfig } from '../config.js'
+import { buildCommitArgv } from '../commitCmd.js'
 import type { TmuxLike } from '../adapters/tmux.js'
 import { Workmux } from '../adapters/workmux.js'
 import * as git from '../adapters/git.js'
@@ -44,12 +47,23 @@ interface IssuedToken {
   key: string
 }
 
+/** Pending-change lists from a repo status that may be unavailable. */
+function pendingFrom(status: git.RepoStatus | null) {
+  return {
+    untracked: status?.untracked ?? [],
+    unstaged: status?.unstaged ?? [],
+    conflicts: status?.conflicts ?? [],
+    hasStaged: status?.hasStaged ?? false,
+  }
+}
+
 /** Diffs, hunk staging, creation, and confirmed destructive actions. */
 export class Management {
   private issued = new Map<string, IssuedToken>()
   private worktreeLocks = new Map<string, Promise<unknown>>()
 
   constructor(
+    private readonly cfg: AppConfig,
     private readonly tmux: TmuxLike,
     private readonly workmux: Workmux,
     private readonly discovery: Discovery,
@@ -70,7 +84,8 @@ export class Management {
         unborn: true,
         snapshotId: 'unborn',
         files: [],
-        untracked: status?.untracked ?? [],
+        ...pendingFrom(status),
+        commitCmd: await this.commitCmdForWorktree(targetId),
         truncated: false,
         observedAt: Date.now(),
       }
@@ -79,6 +94,7 @@ export class Management {
     if (mode === 'branch') {
       base = await git.resolveBase(wt.path)
       if (!base) {
+        const status = await git.repoStatus(wt.path).catch(() => null)
         return {
           worktreeId: targetId,
           mode,
@@ -87,7 +103,8 @@ export class Management {
           unborn: false,
           snapshotId: 'no-base',
           files: [],
-          untracked: [],
+          ...pendingFrom(status),
+          commitCmd: await this.commitCmdForWorktree(targetId),
           truncated: false,
           observedAt: Date.now(),
         }
@@ -105,10 +122,66 @@ export class Management {
       unborn: false,
       snapshotId: snapshotId(`${wt.path}\u0000${mode}\u0000${text}`),
       files,
-      untracked: mode === 'wip' ? (status?.untracked ?? []) : [],
+      ...(mode === 'wip' ? pendingFrom(status) : { untracked: [], unstaged: [], conflicts: [], hasStaged: status?.hasStaged ?? false }),
+      commitCmd: await this.commitCmdForWorktree(targetId),
       truncated: result.truncated,
       observedAt: Date.now(),
     }
+  }
+
+  /**
+   * Stage untracked/unstaged paths after revalidating them against a fresh
+   * status; client-supplied lists are never trusted.
+   */
+  async addPending(targetId: string, paths: string[]): Promise<AddResult> {
+    const wt = (await this.discovery.worktreeTargets()).get(targetId)
+    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    const malformed = paths.filter(
+      (p) => p.trim() === '' || p.startsWith('-') || p.split('/').includes('..'),
+    )
+    if (malformed.length > 0) {
+      return { ok: false, message: 'invalid paths', offenders: malformed }
+    }
+    const status = await git.repoStatus(wt.path)
+    const pending = new Set([...status.untracked, ...status.unstaged, ...status.conflicts])
+    const offenders = paths.filter((p) => !pending.has(p))
+    if (offenders.length > 0) {
+      return { ok: false, message: 'paths are no longer pending; refresh and retry', offenders }
+    }
+    await git.addPaths(wt.path, paths)
+    return { ok: true }
+  }
+
+  /**
+   * Run the operator-configured commit command for this worktree's agent
+   * kind against the index. Async via the operations registry (AI commit
+   * tools can run long).
+   */
+  async commitWorktree(targetId: string, message: string): Promise<OperationView> {
+    const wt = (await this.discovery.worktreeTargets()).get(targetId)
+    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    const cmd = await this.commitCmdForWorktree(targetId)
+    if (!cmd) throw new BadRequestError('commit_cmd_not_configured')
+    const argv = buildCommitArgv(cmd, message)
+    return this.operations.start('commit', wt.handle, async () => {
+      const r = await git.runCommit(wt.path, argv, this.cfg.commitTimeoutMs)
+      const out = [r.stdout, r.stderr].filter(Boolean).join('\n').slice(-BOUNDS.maxCommitOutputBytes)
+      if (r.code !== 0) return { output: out || null, error: `commit failed (exit ${r.code})` }
+      return { output: out || 'committed' }
+    })
+  }
+
+  /**
+   * Resolve the commit command for the worktree's agents: exactly one
+   * configured command across all distinct agent kinds, else null (the UI
+   * keeps the agent-commit path).
+   */
+  private async commitCmdForWorktree(targetId: string): Promise<string | null> {
+    const agents = [...(await this.discovery.agentTargets().catch(() => new Map<string, AgentView>())).values()]
+      .filter((a) => a.worktreeId === targetId)
+    const kinds = [...new Set(agents.map((a) => a.agentKind).filter((k): k is string => k !== null))]
+    const cmds = [...new Set(kinds.map((k) => this.cfg.commitCmdFor(k)).filter((c): c is string => c !== null))]
+    return cmds.length === 1 ? (cmds[0] ?? null) : null
   }
 
   /**

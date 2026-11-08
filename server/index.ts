@@ -61,6 +61,14 @@ const HunkCommentBody = z.object({
   agentId: z.string().min(1).max(64).optional(),
 })
 
+const AddBody = z.object({
+  paths: z.array(z.string().min(1).max(1024)).min(1).max(BOUNDS.maxAddPaths),
+})
+
+const CommitBody = z.object({
+  message: z.string().trim().max(BOUNDS.maxCommitMessageBytes).optional(),
+})
+
 const PrepareBody = z.object({
   action: z.enum(['merge', 'remove', 'stop', 'close', 'open']),
   targetId: z.string().min(1).max(64),
@@ -99,7 +107,7 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
   const discovery = new Discovery(cfg, tmux, workmux)
   const input = new InputService(cfg, tmux, discovery)
   const operations = new Operations()
-  const management = new Management(tmux, workmux, discovery, operations)
+  const management = new Management(cfg, tmux, workmux, discovery, operations)
   const terminals = new TerminalHub(cfg, tmux, discovery)
   const deps: AppDeps = { cfg, tmux, workmux, discovery, input, management, operations, terminals }
 
@@ -226,6 +234,29 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
     try {
       return await management.hunkAction(id, action, parsed.data)
+    } catch (err) {
+      return mgmtReply(reply, err)
+    }
+  })
+
+  app.post('/api/worktrees/:id/add', async (req, reply) => {
+    const { id } = IdParams.parse(req.params)
+    const parsed = AddBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    try {
+      return await management.addPending(id, parsed.data.paths)
+    } catch (err) {
+      return mgmtReply(reply, err)
+    }
+  })
+
+  app.post('/api/worktrees/:id/commit', async (req, reply) => {
+    const { id } = IdParams.parse(req.params)
+    const parsed = CommitBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    try {
+      const op = await management.commitWorktree(id, parsed.data.message ?? '')
+      return reply.code(202).send({ operationId: op.id })
     } catch (err) {
       return mgmtReply(reply, err)
     }

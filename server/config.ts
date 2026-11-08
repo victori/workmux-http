@@ -14,10 +14,27 @@ export interface AppConfig {
   fixtureDir: string | null
   staleAfterSecs: number
   maxOwnedTerminals: number
+  /** Timeout for the configurable commit command (WORKMUX_COMMIT_TIMEOUT_MS). */
+  commitTimeoutMs: number
+  /**
+   * Commit command per agent kind, from WORKMUX_<KIND>_COMMIT_CMD
+   * (kind uppercased, non-alphanumerics → `_`), e.g.
+   * WORKMUX_OMP_COMMIT_CMD='opencode-commit'. OMP and OPENCODE are
+   * interchangeable spellings of the same agent. Undefined = no shell
+   * commit for that kind; the UI keeps the agent-commit path.
+   */
+  commitCmdFor: (kind: string | null) => string | null
 }
 
 const DEFAULT_STALE_AFTER_SECS = 3600
 const DEFAULT_MAX_OWNED_TERMINALS = 4
+const DEFAULT_COMMIT_TIMEOUT_MS = 120000
+
+/** Interchangeable agent-kind spellings (workmux reports opencode as `omp`). */
+const KIND_ALIASES: Record<string, string[]> = {
+  OMP: ['OMP', 'OPENCODE'],
+  OPENCODE: ['OPENCODE', 'OMP'],
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const port = Number(env.WORKMUX_HTTP_PORT ?? 3000)
@@ -52,6 +69,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     fixtureDir: env.WORKMUX_HTTP_FIXTURES || null,
     staleAfterSecs: Number(env.WORKMUX_HTTP_STALE_AFTER ?? DEFAULT_STALE_AFTER_SECS),
     maxOwnedTerminals: Number(env.WORKMUX_HTTP_MAX_OWNED_TERMINALS ?? DEFAULT_MAX_OWNED_TERMINALS),
+    commitTimeoutMs: Number(env.WORKMUX_COMMIT_TIMEOUT_MS ?? DEFAULT_COMMIT_TIMEOUT_MS),
+    commitCmdFor: (kind) => {
+      if (!kind) return null
+      const norm = kind.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+      for (const alias of KIND_ALIASES[norm] ?? [norm]) {
+        const cmd = (env[`WORKMUX_${alias}_COMMIT_CMD`] ?? '').trim()
+        if (cmd !== '') return cmd
+      }
+      return null
+    },
   }
 }
 
@@ -71,4 +98,7 @@ export const BOUNDS = {
   dedupTtlMs: 300000,
   dedupMaxEntries: 1000,
   confirmTokenTtlMs: 300000,
+  maxCommitMessageBytes: 4096,
+  maxAddPaths: 200,
+  maxCommitOutputBytes: 4096,
 }

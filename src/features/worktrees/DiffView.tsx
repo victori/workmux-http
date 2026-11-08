@@ -11,6 +11,8 @@ import { api } from '../../lib/api'
 import type { ConnectionState } from '../../hooks/useDashboard'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { HunkList, hunkKey } from './HunkList'
+import { CommitBar } from './CommitBar'
+import { PendingChanges } from './PendingChanges'
 
 export interface DiffViewProps {
   worktreeId: string
@@ -51,6 +53,11 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
   const [prepared, setPrepared] = useState<PreparedAction | null>(null)
   const [mergeBusy, setMergeBusy] = useState(false)
   const [op, setOp] = useState<OperationView | null>(null)
+  const [addBusy, setAddBusy] = useState(false)
+  const [addNote, setAddNote] = useState<string | null>(null)
+  const [commitOp, setCommitOp] = useState<OperationView | null>(null)
+  const [commitBusy, setCommitBusy] = useState(false)
+  const [commitError, setCommitError] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -114,6 +121,65 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
       load()
     }
   }, [op?.state, load])
+
+  function addPending(paths: string[]): void {
+    setAddBusy(true)
+    setAddNote(null)
+    api
+      .addPaths(worktreeId, paths)
+      .then((r) => {
+        setAddNote(
+          r.ok
+            ? `${paths.length} file${paths.length === 1 ? '' : 's'} staged`
+            : `${r.message ?? 'some paths could not be added'}${r.offenders?.length ? `: ${r.offenders.join(', ')}` : ''}`,
+        )
+        load()
+      })
+      .catch((err: unknown) => setAddNote(err instanceof Error ? err.message : String(err)))
+      .finally(() => setAddBusy(false))
+  }
+
+  function runCommit(message: string): void {
+    setCommitOp(null)
+    setCommitError(null)
+    setCommitBusy(true)
+    api
+      .commit(worktreeId, message)
+      .then(({ operationId }) => api.operation(operationId))
+      .then(setCommitOp)
+      .catch((err: unknown) => {
+        setCommitBusy(false)
+        setCommitError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  // Poll the commit operation every second until terminal state.
+  useEffect(() => {
+    if (!commitOp || (commitOp.state !== 'running' && commitOp.state !== 'unknown')) return
+    const t = setInterval(() => {
+      api
+        .operation(commitOp.id)
+        .then(setCommitOp)
+        .catch(() => {
+          /* transient poll failure; next tick retries */
+        })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [commitOp?.id, commitOp?.state])
+
+  useEffect(() => {
+    if (!commitOp) return
+    if (commitOp.state === 'done') {
+      setCommitBusy(false)
+      setCommitError(null)
+      setNotice('committed')
+      load()
+    } else if (commitOp.state === 'failed') {
+      setCommitBusy(false)
+      setCommitError(`commit failed: ${commitOp.error ?? 'unknown error'}`)
+      load()
+    }
+  }, [commitOp?.state, load])
 
   const wtAgents = agents.filter((a) => a.worktreeId === worktreeId)
   const commitAgent = wtAgents.length === 1 ? wtAgents[0]! : null
@@ -399,6 +465,22 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {!loading && !error && mode === 'wip' && diff && (diff.untracked.length > 0 || diff.unstaged.length > 0 || diff.conflicts.length > 0) && (
+            <div className="mb-3 space-y-1">
+              <PendingChanges
+                untracked={diff.untracked}
+                unstaged={diff.unstaged}
+                conflicts={diff.conflicts}
+                busy={addBusy}
+                onAdd={addPending}
+              />
+              {addNote && (
+                <p role="status" aria-live="polite" className="text-[11px] text-fg-muted">
+                  {addNote}
+                </p>
+              )}
+            </div>
+          )}
           {loading && (
             <div className="flex items-center gap-2 text-sm text-fg-muted">
               <span aria-hidden className="pulse-dot text-accent">●</span>
@@ -481,20 +563,29 @@ export function DiffView({ worktreeId, label, onClose, connection }: DiffViewPro
 
       {/* Footer actions */}
       <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-3 py-2 safe-bottom">
-        <button
-          onClick={sendCommit}
-          disabled={!commitAgent}
-          title={
-            commitAgent
-              ? 'Send "commit" to the worktree agent'
-              : wtAgents.length > 1
-                ? 'Multiple agents in this worktree — open one explicitly'
-                : 'No agent running in this worktree'
-          }
-          className="rounded-lg border border-line px-3 py-2 text-sm text-fg-muted hover:bg-surface-2"
-        >
-          Commit{commitAgent ? '' : ' (no agent in this worktree)'}
-        </button>
+        {diff?.commitCmd ? (
+          <CommitBar
+            commitCmd={diff.commitCmd}
+            busy={commitBusy || commitOp?.state === 'running'}
+            error={commitError}
+            onCommit={runCommit}
+          />
+        ) : (
+          <button
+            onClick={sendCommit}
+            disabled={!commitAgent}
+            title={
+              commitAgent
+                ? 'Send "commit" to the worktree agent'
+                : wtAgents.length > 1
+                  ? 'Multiple agents in this worktree — open one explicitly'
+                  : 'No agent running in this worktree'
+            }
+            className="rounded-lg border border-line px-3 py-2 text-sm text-fg-muted hover:bg-surface-2"
+          >
+            Commit{commitAgent ? '' : ' (no agent in this worktree)'}
+          </button>
+        )}
         {prUrl && (
           <a
             href={prUrl}

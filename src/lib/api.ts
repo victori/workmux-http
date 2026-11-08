@@ -1,4 +1,6 @@
 import type {
+  AddResult,
+  CommitAccepted,
   CreateWorktreeRequest,
   DashboardSnapshot,
   DeliveryResult,
@@ -68,6 +70,10 @@ export const api = {
     post<HunkActionResult>(`/api/worktrees/${encodeId(worktreeId)}/hunks/${action}`, req),
   hunkComment: (worktreeId: string, req: unknown) =>
     post<DeliveryResult>(`/api/worktrees/${encodeId(worktreeId)}/hunk-comments`, req),
+  addPaths: (worktreeId: string, paths: string[]) =>
+    post<AddResult>(`/api/worktrees/${encodeId(worktreeId)}/add`, { paths }),
+  commit: (worktreeId: string, message?: string) =>
+    post<CommitAccepted>(`/api/worktrees/${encodeId(worktreeId)}/commit`, { message }),
   createWorktree: (req: CreateWorktreeRequest) => post<OperationView>('/api/worktrees', req),
   prepare: (req: PrepareActionRequest) => post<PreparedAction>('/api/actions/prepare', req),
   execute: (req: PrepareActionRequest & { confirmToken: string; requestId: string }) =>

@@ -369,3 +369,48 @@ original requirements above remain in force unless noted.
   PTY rows, which is the intended fit); iOS Safari visual-viewport and
   keyboard behaviors are unit/e2e-proven only in Chromium emulation —
   real-device spot-check still recommended.
+
+### Pending changes + configurable commit (2026-11-07, plan `docs/2026-11-07-untracked-commit-plan.md`)
+- Diff view (WIP) now lists pending changes: untracked AND unstaged tracked
+  files (porcelain v2 parse extended with per-entry paths; also fixed a
+  latent XY-offset bug where `hasStaged` was always true) plus conflicts,
+  with per-file Add / Add-all → `git add --` after revalidating every path
+  against a fresh status (stale → `{ ok:false, offenders:[…] }`; `-`-prefixed
+  and `..` paths rejected shape-first).
+- Direct commit path (user decision): `WORKMUX_<KIND>_COMMIT_CMD` env vars
+  (kind uppercased, non-alphanumerics → `_`), e.g.
+  `WORKMUX_OMP_COMMIT_CMD="opencode-commit"`. Configured for the worktree's
+  agent kind → CommitBar (message box) replaces the agent-commit button for
+  that worktree; unset → agent-commit unchanged. Index model: commit contents
+  are exactly what was staged; a configured `-a`/`--all` shows a visible
+  warning chip. `$@` substitutes the message as one argv element (appended
+  when absent); tokenizer honors quotes; no shell, message never parsed.
+  Execution is async via the operations registry (202 + poll), timeout
+  `WORKMUX_COMMIT_TIMEOUT_MS` (default 120 s); output tail capped 4 KiB.
+  Command source is server env only — never request bodies or repo files.
+- New API: `POST /api/worktrees/:id/add`, `POST /api/worktrees/:id/commit`
+  (202 `{operationId}`); `DiffResponse` gains `unstaged`, `conflicts`,
+  `hasStaged`, `commitCmd` (resolved display command; UI picks commit path
+  from it). Management gained a cfg dependency (constructor change).
+- Verification delta: +30 unit (commitCmd tokenizer 8, real-git adapter 8,
+  management add/commit against real git + fake-script 8, DiffView jsdom 6)
+  = 182 vitest; +4 e2e (contract validation, malformed/offender rejection,
+  empty-message 400, CommitBar graceful failure on missing fixture cwd;
+  e2e server exports WORKMUX_CLAUDE_COMMIT_CMD=/usr/bin/true) = 22
+  Playwright; typecheck + build clean. Live read-only smoke on a real repo:
+  unstaged listed, `commitCmd` resolved, `--bogus` rejected as offender —
+  no add/commit executed against real repos. Disclosed: real
+  `opencode-commit`/`claude-commit` binaries not invoked in CI; argv
+  contract proven by fake-script harness.
+- Follow-up (user): `WORKMUX_OPENCODE_COMMIT_CMD` accepted for the opencode
+  agent — OMP↔OPENCODE kind aliases (exact-kind variable preferred); +6
+  config tests = 188 vitest.
+- Follow-up 2 (user live use): `-a` warning chip removed (intentional in
+  operator command); CommitBar gained spinner + inline failure alert;
+  documented PATH/executable requirement (no shell — zsh functions can't
+  resolve; operator handles command resolution themselves). DiffView tests
+  adjusted (-a test dropped, spinner test added) = 188 vitest, 22 e2e;
+  live stub-commit proof: POST commit → done, output echoed argv.
+- Follow-up 3 (user): commit message made optional end-to-end (empty =
+  command runs without message arg; `$@` token dropped). +2 tests =
+  190 vitest, 22 e2e; live proof POST {} → done.
