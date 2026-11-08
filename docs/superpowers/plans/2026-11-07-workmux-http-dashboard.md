@@ -462,3 +462,9 @@ original requirements above remain in force unless noted.
   Live read-only: real fleet ahead counts + 3-commit review list; no push
   executed against real remotes. Disclosed: badge reflects last local
   status (fetches move remote refs); no selective push.
+- Follow-up (same day): push dialog commit rows are tappable — full commit
+  body (capped 2000 chars, `CommitEntry.body`, `%x09%b%x1e` log format)
+  expands inline with aria-expanded; bodyless commits stay static. Ack
+  checkbox wording is now per-action via `ackLabel` (push: "I confirm these
+  commits are ready to push"; destructive dialogs keep the generic text).
+  +1 git test (multi-line bodies), +1 jsdom (expand + wording) = 224.

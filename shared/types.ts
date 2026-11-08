@@ -236,7 +236,7 @@ export interface PreparedAction {
   confirmToken?: string
   warnings: string[]
   /** For 'push': commits that would be published, newest first (capped). */
-  commits?: Array<{ sha: string; subject: string }>
+  commits?: Array<{ sha: string; subject: string; body?: string }>
   /** True when the commits list was truncated at the cap. */
   commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */

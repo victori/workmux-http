@@ -225,6 +225,8 @@ export async function prUrl(cwd: string, branch: string): Promise<string | null>
 export interface CommitEntry {
   sha: string
   subject: string
+  /** Full message body (after the subject); capped, may be empty. */
+  body: string
 }
 
 export interface UnpushedResult {
@@ -259,13 +261,21 @@ export async function unpushedCommits(
     if (remoteRef.code === 0) ref = `origin/${branch}`
   }
   const range = ref ? `${ref}..HEAD` : 'HEAD'
-  const res = await run(['git', 'log', `-${limit + 1}`, '--pretty=format:%h%x09%s', range], { cwd })
+  const res = await run(
+    ['git', 'log', `-${limit + 1}`, '--pretty=format:%h%x09%s%x09%b%x1e', range],
+    { cwd },
+  )
   if (res.code !== 0) return { commits: [], truncated: false, ref }
-  const lines = res.stdout.split('\n').filter((l) => l !== '')
-  const truncated = lines.length > limit
-  const commits = lines.slice(0, limit).map((l) => {
-    const tab = l.indexOf('\t')
-    return { sha: l.slice(0, tab), subject: l.slice(tab + 1) }
+  const records = res.stdout.split('\x1e').map((r) => r.replace(/^\n/, '')).filter((r) => r !== '')
+  const truncated = records.length > limit
+  const commits = records.slice(0, limit).map((rec) => {
+    const [sha = '', subject = '', ...rest] = rec.split('\t')
+    const body = rest.join('\t').replace(/^\n+/, '').replace(/\s+$/, '')
+    return {
+      sha,
+      subject,
+      body: body.slice(0, BOUNDS.maxPushCommitBodyBytes),
+    }
   })
   return { commits, truncated, ref }
 }

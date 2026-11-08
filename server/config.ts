@@ -105,4 +105,5 @@ export const BOUNDS = {
   maxAddPaths: 200,
   maxCommitOutputBytes: 4096,
   maxPushCommitsList: 20,
+  maxPushCommitBodyBytes: 2000,
 }

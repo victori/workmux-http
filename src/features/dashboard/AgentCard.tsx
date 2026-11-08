@@ -153,6 +153,7 @@ export function AgentCard({
           commitsTruncated={pending.commitsTruncated}
           blocked={pending.blocked}
           confirmLabel="Push now"
+          ackLabel="I confirm these commits are ready to push"
           busy={busy}
           onConfirm={(ack) => void confirmPush(ack)}
           onCancel={() => setPending(null)}

@@ -5,12 +5,14 @@ export interface ConfirmDialogProps {
   targetLabel: string
   warnings: string[]
   /** For 'push': commits that would be published, newest first (capped). */
-  commits?: Array<{ sha: string; subject: string }>
+  commits?: Array<{ sha: string; subject: string; body?: string }>
   /** True when the commits list was truncated at the cap. */
   commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */
   blocked?: string
   confirmLabel: string
+  /** Ack checkbox text; defaults to the generic warnings wording. */
+  ackLabel?: string
   requireAck?: boolean
   busy?: boolean
   onConfirm: (acceptWarnings: boolean) => void
@@ -25,12 +27,14 @@ export function ConfirmDialog({
   commitsTruncated,
   blocked,
   confirmLabel,
+  ackLabel,
   requireAck,
   busy,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const [ack, setAck] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const needAck = requireAck === true || warnings.length > 0
   const canConfirm = !blocked && !busy && (!needAck || ack)
 
@@ -51,15 +55,51 @@ export function ConfirmDialog({
             <p className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
               {commits.length} commit{commits.length === 1 ? '' : 's'} to publish
             </p>
-            <ul role="list" className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-lg bg-surface-2 px-3 py-2">
-              {commits.map((c) => (
-                <li key={c.sha} className="flex gap-2 font-mono text-xs text-fg">
-                  <span className="shrink-0 text-accent">{c.sha}</span>
-                  <span className="min-w-0 truncate" title={c.subject}>
-                    {c.subject}
-                  </span>
-                </li>
-              ))}
+            <ul role="list" className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-lg bg-surface-2 px-2 py-2">
+              {commits.map((c) => {
+                const open = expanded.has(c.sha)
+                const row = (
+                  <>
+                    <span className="shrink-0 text-accent">{c.sha}</span>
+                    <span className={`min-w-0 ${open ? 'break-words whitespace-normal' : 'truncate'}`} title={c.subject}>
+                      {c.subject}
+                    </span>
+                    {(c.body ?? '') !== '' && (
+                      <span aria-hidden className={`ml-auto shrink-0 text-fg-muted ${open ? 'rotate-90' : ''}`}>
+                        ▸
+                      </span>
+                    )}
+                  </>
+                )
+                return (
+                  <li key={c.sha} className="text-xs text-fg">
+                    {(c.body ?? '') !== '' ? (
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() =>
+                          setExpanded((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(c.sha)) next.delete(c.sha)
+                            else next.add(c.sha)
+                            return next
+                          })
+                        }
+                        className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left font-mono hover:bg-surface"
+                      >
+                        {row}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-2 px-1 py-0.5 font-mono">{row}</span>
+                    )}
+                    {open && (
+                      <pre className="mx-1 mt-1 mb-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface px-2 py-1.5 font-mono text-[11px] leading-snug text-fg-muted">
+                        {c.body}
+                      </pre>
+                    )}
+                  </li>
+                )
+              })}
               {commitsTruncated && (
                 <li className="text-[11px] italic text-fg-muted">…older commits not shown</li>
               )}
@@ -89,7 +129,7 @@ export function ConfirmDialog({
               onChange={(e) => setAck(e.target.checked)}
               className="h-4 w-4 accent-[var(--color-err)]"
             />
-            I accept these warnings
+            {ackLabel ?? 'I accept these warnings'}
           </label>
         )}
         <div className="mt-4 flex justify-end gap-2">

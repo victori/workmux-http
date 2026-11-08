@@ -193,6 +193,7 @@ describe('push path (real git + local bare remote)', () => {
     const u = await unpushedCommits(clone, 'main', 20)
     expect(u.ref).toBe('origin/main')
     expect(u.commits.map((c) => c.subject)).toEqual(['fix: third', 'feat: second'])
+    expect(u.commits.every((c) => c.body === '')).toBe(true)
     expect(u.truncated).toBe(false)
 
     const p2 = await push(clone, 'main', false, 30_000)
@@ -237,5 +238,14 @@ describe('push path (real git + local bare remote)', () => {
     expect(p.code).not.toBe(0)
     expect(`${p.stdout}${p.stderr}`).toMatch(/non-fast-forward|fetch first|rejected/i)
     rmSync(other, { recursive: true, force: true })
+  })
+
+  test('should capture multi-line commit bodies', async () => {
+    writeFileSync(path.join(clone, 'body.txt'), 'b\n')
+    cgit(['add', 'body.txt'])
+    cgit(['commit', '-qm', 'feat: with body', '-m', 'line one', '-m', 'line two'])
+    const u = await unpushedCommits(clone, 'main', 20)
+    expect(u.commits[0]?.subject).toBe('feat: with body')
+    expect(u.commits[0]?.body).toBe('line one\n\nline two')
   })
 })

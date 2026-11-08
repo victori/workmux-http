@@ -154,6 +154,37 @@ describe('AgentCard push', () => {
     expect(await screen.findByRole('status', {}, { timeout: 3000 })).toHaveTextContent(/pushed.*main -> origin\/main/)
   })
 
+  it('expands the full commit message on click and uses push-specific ack wording', async () => {
+    mockApi.prepare.mockResolvedValue({
+      action: 'push',
+      targetId: 'wt_1',
+      targetLabel: 'dc/api [main]',
+      requiresConfirmation: true,
+      confirmToken: 'tok-4',
+      warnings: ['worktree has uncommitted changes'],
+      commits: [
+        { sha: 'abc1234', subject: 'feat: long one', body: 'detailed body line\n\nsecond para' },
+        { sha: 'def5678', subject: 'chore: no body', body: '' },
+      ],
+    })
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
+    expect(
+      within(dialog).getByText('I confirm these commits are ready to push'),
+    ).toBeInTheDocument()
+    const row = within(dialog).getByRole('button', { name: /feat: long one/ })
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(row)
+    expect(
+      within(dialog).getByText((_, el) => el?.tagName === 'PRE' && el.textContent === 'detailed body line\n\nsecond para'),
+    ).toBeInTheDocument()
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    // Commits without a body are not expandable.
+    expect(within(dialog).queryByRole('button', { name: /chore: no body/ })).not.toBeInTheDocument()
+    expect(within(dialog).getByText('chore: no body')).toBeInTheDocument()
+  })
+
   it('surfaces push failure inline', async () => {
     mockApi.prepare.mockResolvedValue({
       action: 'push',

@@ -101,14 +101,15 @@ protection).
 - **Push** — agent cards show an `↑N` badge when the worktree has N unpushed
   commits (ahead of upstream; hidden when nothing pending or git is
   unavailable). The card's Push button opens a confirm dialog listing the
-  exact commits that would be published (sha + subject, capped at 20) plus
-  warnings — first push (`creates origin/<branch> + sets upstream`) and
-  divergence (`remote has N newer commits`). The confirmation token binds
-  HEAD sha + commit list, so commits added after you open the dialog force
-  re-review. Push runs async via the operations registry. **No force-push
-  code path exists**; a non-fast-forward is rejected by the remote and
-  surfaced. `ahead` reflects the last local `git status` (remote refs move
-  when something fetches).
+  exact commits that would be published (sha + subject, capped at 20; tap a
+  commit with a body to expand the full message) plus warnings — first push
+  (`creates origin/<branch> + sets upstream`) and divergence (`remote has N
+  newer commits`); the checkbox reads "I confirm these commits are ready to
+  push". The confirmation token binds HEAD sha + commit list, so commits
+  added after you open the dialog force re-review. Push runs async via the
+  operations registry. **No force-push code path exists**; a
+  non-fast-forward is rejected by the remote and surfaced. `ahead` reflects
+  the last local `git status` (remote refs move when something fetches).
 - **Destructive actions** (merge, remove worktree, stop agent) always
   prepare → show exact target + warnings → confirm token → execute with
   re-validation; each token is single-use. No auto-retry anywhere; uncertain
@@ -156,7 +157,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 222 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 224 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
