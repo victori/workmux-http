@@ -12,6 +12,7 @@ test.describe('push button (fixture mode)', () => {
   test('dashboard fabricates no unpushed badges without git info', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByText('↑')).toHaveCount(0)
+    await expect(page.getByText('●')).toHaveCount(0)
   })
 
   test('prepare push on a fixture worktree returns a structured blocked response', async ({ request }) => {

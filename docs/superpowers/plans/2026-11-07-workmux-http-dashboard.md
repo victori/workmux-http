@@ -492,3 +492,14 @@ original requirements above remain in force unless noted.
   timeout = `WORKMUX_PUSH_TIMEOUT_MS`. +5 argv unit, +3 config,
   +1 management integration (wrapper script logs argv + pushes a new
   branch to the local bare remote) = 233 vitest.
+
+### Pending-changes badge (2026-11-07, plan `docs/2026-11-07-pending-changes-badge-plan.md`)
+- Agent cards show `●N` (N files pending commit = distinct porcelain v2
+  file entries: untracked + staged + unstaged + conflicts; `MM` counts
+  once), warn-colored pill left of `↑N`; hidden at 0/null, never fabricated.
+  `RepoStatus.pendingChanges` (count from existing parse, no new subprocess)
+  → `GitInfo.pendingChanges` → card. Display-only.
+- Verification delta: +1 adapter (mixed statuses → 3, clean → 0), +2 jsdom
+  (shows ●3, hidden at 0/no-git), +1 e2e assertion (fixture mode renders
+  no ● badge) = 235 vitest / 26 Playwright. Live smoke: real fleet
+  workmux-http agent pendingChanges=8, ahead=1.

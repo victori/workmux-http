@@ -19,6 +19,8 @@ export interface RepoStatus {
   unstaged: string[]
   /** Unmerged paths. */
   conflicts: string[]
+  /** Distinct porcelain file entries (each path counts once). */
+  pendingChanges: number
 }
 
 export interface DiffResult {
@@ -69,6 +71,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     untracked: [],
     unstaged: [],
     conflicts: [],
+    pendingChanges: 0,
   }
   for (const line of res.stdout.split('\n')) {
     if (!line) continue
@@ -88,6 +91,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     } else if (line.startsWith('1 ') || line.startsWith('2 ') || line.startsWith('u ')) {
       const entry = entryFields(line)
       if (!entry) continue
+      status.pendingChanges += 1
       const { xy, path } = entry
       if (xy[0] !== '.') status.hasStaged = true
       if (xy[1] !== '.') status.hasUnstaged = true
@@ -99,6 +103,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
       }
     } else if (line.startsWith('? ')) {
       status.untracked.push(line.slice(2))
+      status.pendingChanges += 1
     }
   }
   return status

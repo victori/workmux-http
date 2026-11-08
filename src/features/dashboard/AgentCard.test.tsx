@@ -73,6 +73,24 @@ describe('AgentCard push', () => {
     expect(screen.getByRole('button', { name: 'Push dc-api' })).toBeInTheDocument()
   })
 
+  it('shows the pending-changes badge with the file count', () => {
+    const a = agent()
+    a.git = { ...a.git!, pendingChanges: 3 }
+    render(<AgentCard agent={a} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.getByTitle('3 files pending commit')).toHaveTextContent('●3')
+  })
+
+  it('hides the pending badge at zero and without git info', () => {
+    const a = agent()
+    a.git = { ...a.git!, pendingChanges: 0 }
+    render(<AgentCard agent={a} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.queryByTitle(/pending commit/)).not.toBeInTheDocument()
+    const b = agent()
+    b.git = null
+    render(<AgentCard agent={b} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.queryByTitle(/pending commit/)).not.toBeInTheDocument()
+  })
+
   it('hides badge and button when nothing is unpushed', () => {
     const a = agent()
     a.git = { ...a.git!, ahead: 0 }

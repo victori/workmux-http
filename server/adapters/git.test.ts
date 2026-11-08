@@ -46,6 +46,7 @@ describe('repoStatus', () => {
     expect(s.hasUnstaged).toBe(true)
     expect(s.conflicts).toEqual([])
     expect(s.branch).toBe('main')
+    expect(s.pendingChanges).toBe(3) // M + MM(counts once) + ??
   })
 
   test('should report nothing pending on a clean repo', async () => {
@@ -57,6 +58,7 @@ describe('repoStatus', () => {
     expect(s.conflicts).toEqual([])
     expect(s.hasStaged).toBe(false)
     expect(s.hasUnstaged).toBe(false)
+    expect(s.pendingChanges).toBe(0)
   })
 
   test('should list unmerged paths as conflicts', async () => {

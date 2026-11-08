@@ -97,6 +97,14 @@ export function AgentCard({
             <span className="truncate">{agent.name}</span>
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
+            {(agent.git?.pendingChanges ?? 0) > 0 && (
+              <span
+                title={`${agent.git?.pendingChanges} file${agent.git?.pendingChanges === 1 ? '' : 's'} pending commit`}
+                className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-medium tabular-nums text-warn"
+              >
+                ●{agent.git?.pendingChanges}
+              </span>
+            )}
             {unpushed !== null && unpushed > 0 && (
               <span
                 title={`${unpushed} unpushed commit${unpushed === 1 ? '' : 's'}`}

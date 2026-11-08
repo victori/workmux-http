@@ -101,7 +101,8 @@ protection).
     `{ echo '#!/bin/zsh'; functions opencode-commit; echo 'opencode-commit "$@"'; } > ~/.local/bin/opencode-commit && chmod +x ~/.local/bin/opencode-commit`
 - **Push** — agent cards show an `↑N` badge when the worktree has N unpushed
   commits (ahead of upstream; hidden when nothing pending or git is
-  unavailable). The card's Push button opens a confirm dialog listing the
+  unavailable), and a `●N` badge when N files have changes to be committed
+  (untracked + staged + unstaged + conflicts, each path counted once). The card's Push button opens a confirm dialog listing the
   exact commits that would be published (sha + subject, capped at 20; tap a
   commit with a body to expand the full message) plus warnings — first push
   (`creates origin/<branch> + sets upstream`) and divergence (`remote has N
@@ -163,7 +164,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 233 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 235 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,

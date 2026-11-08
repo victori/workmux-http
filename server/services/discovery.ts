@@ -254,6 +254,7 @@ export class Discovery {
         unborn: st.unborn,
         ahead: st.hasUpstream ? st.ahead : null,
         behind: st.hasUpstream ? st.behind : null,
+        pendingChanges: st.pendingChanges,
       }
       this.gitCache.set(workdir, { at: Date.now(), value: info, failed: false })
       return info

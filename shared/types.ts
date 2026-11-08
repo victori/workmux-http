@@ -16,6 +16,8 @@ export interface GitInfo {
   ahead: number | null
   /** Commits behind upstream. Null = no upstream configured. */
   behind: number | null
+  /** Distinct files with pending changes (untracked+staged+unstaged+conflicts). */
+  pendingChanges?: number | null
   unavailable?: undefined
 }
 
