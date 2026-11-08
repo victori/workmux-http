@@ -34,4 +34,19 @@ test.describe('push button (fixture mode)', () => {
     })
     expect(res.status()).toBe(404)
   })
+
+  test('execute push is routed and rejects invalid confirmation tokens', async ({ request }) => {
+    const res = await request.post('/api/actions/execute', {
+      ...MUTATION,
+      data: {
+        action: 'push',
+        targetId: 'wt_263bc0066148',
+        acceptWarnings: true,
+        confirmToken: 'not-a-real-token',
+        requestId: 'e2e-push-1',
+      },
+    })
+    expect(res.status()).toBe(409)
+    expect((await res.json()).error).toBe('confirmation_required')
+  })
 })

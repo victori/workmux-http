@@ -12,7 +12,7 @@ import type {
   OperationView,
 } from '../../shared/types.js'
 import { BOUNDS, type AppConfig } from '../config.js'
-import { buildCommitArgv } from '../commitCmd.js'
+import { buildCommitArgv, buildPushArgv } from '../commitCmd.js'
 import type { TmuxLike } from '../adapters/tmux.js'
 import { Workmux } from '../adapters/workmux.js'
 import * as git from '../adapters/git.js'
@@ -184,6 +184,15 @@ export class Management {
     return cmds.length === 1 ? (cmds[0] ?? null) : null
   }
 
+  /** Same resolution rule as commitCmdForWorktree, for WORKMUX_<KIND>_PUSH_CMD. */
+  private async pushCmdForWorktree(targetId: string): Promise<string | null> {
+    const agents = [...(await this.discovery.agentTargets().catch(() => new Map<string, AgentView>())).values()]
+      .filter((a) => a.worktreeId === targetId)
+    const kinds = [...new Set(agents.map((a) => a.agentKind).filter((k): k is string => k !== null))]
+    const cmds = [...new Set(kinds.map((k) => this.cfg.pushCmdFor(k)).filter((c): c is string => c !== null))]
+    return cmds.length === 1 ? (cmds[0] ?? null) : null
+  }
+
   /**
    * Stage/unstage one server-issued hunk (or split piece). Rejects stale
    * snapshots so another client's or the agent's edits are never clobbered.
@@ -309,7 +318,11 @@ export class Management {
           } else if (un.ref !== null && st.ahead === 0 && !st.hasUpstream) {
             blocked = 'nothing to push'
           } else if (un.ref === null) {
-            warnings.push(`no upstream; this creates origin/${st.branch} and sets upstream`)
+            warnings.push(
+              (await this.pushCmdForWorktree(req.targetId))
+                ? 'no upstream; the configured push command decides how the branch is published'
+                : `no upstream; this creates origin/${st.branch} and sets upstream`,
+            )
           }
           if (st.hasUpstream && st.ahead === 0) blocked = 'nothing to push — branch is up to date with upstream'
           if (st.hasUpstream && st.behind > 0) {
@@ -409,8 +422,12 @@ export class Management {
           throw new BadRequestError('branch is not push-safe')
         }
         const setUpstream = !st.hasUpstream
+        const cmd = await this.pushCmdForWorktree(prepared.targetId)
+        const argv = cmd ? buildPushArgv(cmd, { branch: st.branch, remote: 'origin' }) : null
         return this.operations.start('push', prepared.targetLabel, async () => {
-          const res = await git.push(wt.path, st.branch as string, setUpstream, this.cfg.pushTimeoutMs)
+          const res = argv
+            ? await git.runPush(wt.path, argv, this.cfg.pushTimeoutMs)
+            : await git.push(wt.path, st.branch as string, setUpstream, this.cfg.pushTimeoutMs)
           const out = `${res.stdout}\n${res.stderr}`.trim()
           if (res.code !== 0) return { output: out, error: `push failed (exit ${res.code}): ${out}` }
           return { output: out || 'pushed' }

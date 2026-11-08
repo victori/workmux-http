@@ -42,3 +42,22 @@ describe('loadConfig commit settings', () => {
     expect(loadConfig({ WORKMUX_COMMIT_TIMEOUT_MS: '45000' }).commitTimeoutMs).toBe(45000)
   })
 })
+
+describe('loadConfig push command settings', () => {
+  it('resolves WORKMUX_<KIND>_PUSH_CMD with OMP/OPENCODE aliasing', () => {
+    const cfg = loadConfig({ WORKMUX_OPENCODE_PUSH_CMD: 'zsh -ic "git push -u {{REMOTE}} {{BRANCH}}"' })
+    expect(cfg.pushCmdFor('omp')).toBe('zsh -ic "git push -u {{REMOTE}} {{BRANCH}}"')
+    expect(cfg.pushCmdFor('opencode')).toBe('zsh -ic "git push -u {{REMOTE}} {{BRANCH}}"')
+  })
+
+  it('returns null when unset or kind is null', () => {
+    const cfg = loadConfig({})
+    expect(cfg.pushCmdFor('omp')).toBeNull()
+    expect(cfg.pushCmdFor(null)).toBeNull()
+  })
+
+  it('normalizes non-alnum kinds', () => {
+    const cfg = loadConfig({ WORKMUX_MY_AGENT_PUSH_CMD: 'x' })
+    expect(cfg.pushCmdFor('my-agent')).toBe('x')
+  })
+})

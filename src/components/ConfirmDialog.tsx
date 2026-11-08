@@ -121,7 +121,7 @@ export function ConfirmDialog({
             Blocked: {blocked}
           </p>
         )}
-        {warnings.length > 0 && (
+        {needAck && (
           <label className="mt-3 flex items-center gap-2 text-sm text-fg-muted">
             <input
               type="checkbox"

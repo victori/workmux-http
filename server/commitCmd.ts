@@ -37,25 +37,25 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-function replaceAllLiteral(haystack: string, value: string): string {
-  return haystack.split(COMMIT_MSG_PLACEHOLDER).join(value)
+function replaceAllLiteral(haystack: string, needle: string, value: string): string {
+  return haystack.split(needle).join(value)
 }
 
 /** Substitute placeholder occurrences within one token's text. */
-function substituteIn(text: string, msg: string, shell: boolean): string {
-  if (!shell) return replaceAllLiteral(text, msg)
+function substituteIn(text: string, placeholder: string, msg: string, shell: boolean): string {
+  if (!shell) return replaceAllLiteral(text, placeholder, msg)
 
   // Double-quoted regions inside the text: escape for "…" context.
   let out = text.replace(/"([^"]*)"/g, (_m, inner: string) =>
-    inner.includes(COMMIT_MSG_PLACEHOLDER)
-      ? `"${replaceAllLiteral(inner, escapeDoubleQuoted(msg))}"`
+    inner.includes(placeholder)
+      ? `"${replaceAllLiteral(inner, placeholder, escapeDoubleQuoted(msg))}"`
       : `"${inner}"`,
   )
   // Single-quoted regions: 'pre{{X}}post' → 'pre'<quoted msg>'post'
   // (adjacent quoted words concatenate in the shell).
   out = out.replace(/'([^']*)'/g, (_m, inner: string) => {
-    if (!inner.includes(COMMIT_MSG_PLACEHOLDER)) return `'${inner}'`
-    const parts = inner.split(COMMIT_MSG_PLACEHOLDER)
+    if (!inner.includes(placeholder)) return `'${inner}'`
+    const parts = inner.split(placeholder)
     let r = parts[0] === '' ? '' : `'${parts[0]}'`
     for (const p of parts.slice(1)) {
       r += shellQuote(msg)
@@ -64,8 +64,8 @@ function substituteIn(text: string, msg: string, shell: boolean): string {
     return r
   })
   // Remaining bare occurrences: single-quote wrap each insertion point.
-  if (out.includes(COMMIT_MSG_PLACEHOLDER)) {
-    const parts = out.split(COMMIT_MSG_PLACEHOLDER)
+  if (out.includes(placeholder)) {
+    const parts = out.split(placeholder)
     out = parts[0]!
     for (const p of parts.slice(1)) out += `${shellQuote(msg)}${p}`
   }
@@ -105,12 +105,48 @@ export function buildCommitArgv(cmd: string, message: string): string[] {
     }
     if (t.includes(COMMIT_MSG_PLACEHOLDER)) {
       sawPlaceholder = true
-      out.push(substituteIn(t, msg, shell))
+      out.push(substituteIn(t, COMMIT_MSG_PLACEHOLDER, msg, shell))
       continue
     }
     out.push(t)
   }
   if (!sawPlaceholder && msg) out.push(msg)
   if (out.length === 0) throw new Error('commit command is empty')
+  return out
+}
+
+export const PUSH_BRANCH_PLACEHOLDER = '{{BRANCH}}'
+export const PUSH_REMOTE_PLACEHOLDER = '{{REMOTE}}'
+
+/**
+ * Build argv for a configured push command. `{{BRANCH}}` / `{{REMOTE}}`
+ * follow the same rules as `{{COMMIT_MSG}}`: whole-token → one argv
+ * element; substring → context-aware escaping when the command starts
+ * with a shell (e.g. `zsh -ic 'git push -u {{REMOTE}} {{BRANCH}}'`).
+ * With no `{{BRANCH}}` token anywhere, the branch is appended as the last
+ * argv element. The wrapper owns flags (e.g. `-u` for first push).
+ */
+export function buildPushArgv(cmd: string, vars: { branch: string; remote: string }): string[] {
+  const toks = tokenizeDetailed(cmd)
+  if (toks.length === 0) throw new Error('push command is empty')
+  const first = toks[0]!.split('/').pop() ?? ''
+  const shell = SHELL_BASENAMES.has(first)
+
+  let sawBranch = false
+  const out: string[] = []
+  for (const t of toks) {
+    let tok = t
+    for (const [ph, value] of [
+      [PUSH_BRANCH_PLACEHOLDER, vars.branch],
+      [PUSH_REMOTE_PLACEHOLDER, vars.remote],
+    ] as const) {
+      if (!tok.includes(ph)) continue
+      if (ph === PUSH_BRANCH_PLACEHOLDER) sawBranch = true
+      tok = tok === ph ? value : substituteIn(tok, ph, value, shell)
+    }
+    out.push(tok)
+  }
+  if (!sawBranch) out.push(vars.branch)
+  if (out.length === 0) throw new Error('push command is empty')
   return out
 }

@@ -468,3 +468,27 @@ original requirements above remain in force unless noted.
   checkbox wording is now per-action via `ackLabel` (push: "I confirm these
   commits are ready to push"; destructive dialogs keep the generic text).
   +1 git test (multi-line bodies), +1 jsdom (expand + wording) = 224.
+- Follow-up 2 (same day): push UX fixes from live feedback —
+  (1) ack checkbox now renders whenever an ack is required (was gated on
+  warnings.length > 0, so clean-tree push showed no checkbox; a
+  requireAck-without-warnings dialog was also un-confirmable), and push
+  always requires the ack even with zero warnings;
+  (2) non-blocking: dialog closes on accept, card shows pulsing
+  "pushing…" indicator + final inline ✓/error note (was: dialog frozen
+  "Working…" until completion; null-poll left zero feedback);
+  (3) +1 e2e execute-token-rejection = 26. Full HTTP push proven
+  end-to-end against a disposable bare remote (prepare review list →
+  execute 202 → op done "[new branch] main -> main" → badge clears,
+  remote sha == local HEAD); real remotes untouched.
+- Follow-up 3 (same day): configurable push runner —
+  `WORKMUX_<KIND>_PUSH_CMD` (same kind normalization + OMP↔OPENCODE
+  aliasing as the commit vars) replaces the built-in `git push` for that
+  worktree's agent kind; unresolved/ambiguous/no-agents ⇒ built-in path.
+  New `buildPushArgv` in commitCmd.ts: `{{BRANCH}}`/`{{REMOTE}}` whole-token
+  = one argv element, substring = context-aware shell escaping (identical
+  semantics to `{{COMMIT_MSG}}`), no `{{BRANCH}}` ⇒ branch appended last;
+  wrapper owns flags (`-u`), first-push warning reworded when a custom
+  command is configured. `git.runPush` adapter mirrors `runCommit`;
+  timeout = `WORKMUX_PUSH_TIMEOUT_MS`. +5 argv unit, +3 config,
+  +1 management integration (wrapper script logs argv + pushes a new
+  branch to the local bare remote) = 233 vitest.

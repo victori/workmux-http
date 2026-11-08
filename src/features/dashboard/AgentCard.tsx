@@ -54,7 +54,9 @@ export function AgentCard({
   async function confirmPush(acceptWarnings: boolean): Promise<void> {
     const token = pending?.confirmToken
     if (!pending || !token) return
+    setPending(null)
     setBusy(true)
+    setNote('pushing…')
     try {
       const op = await api.execute({
         action: 'push',
@@ -64,18 +66,17 @@ export function AgentCard({
         requestId: crypto.randomUUID(),
       })
       const final = await pollOperation(op.id, () => cancelledRef.current)
-      if (final) {
-        setNote(
-          final.state === 'done'
+      setNote(
+        final === null
+          ? 'push started — result unknown; check the badge after refresh'
+          : final.state === 'done'
             ? `✓ pushed${final.output ? `: ${final.output.split('\n').pop() ?? ''}` : ''}`
             : final.error ?? `push ${final.state}`,
-        )
-      }
+      )
     } catch (err) {
       setNote(err instanceof ApiError ? err.message : 'push failed')
     } finally {
       setBusy(false)
-      setPending(null)
     }
   }
 
@@ -122,7 +123,16 @@ export function AgentCard({
       </button>
       <div className="flex items-center justify-end gap-1 border-t border-line px-2 py-1">
         {note && (
-          <span role="status" aria-live="polite" className="mr-auto min-w-0 truncate px-1 text-[11px] text-fg-muted">
+          <span
+            role="status"
+            aria-live="polite"
+            className="mr-auto min-w-0 px-1 text-[11px] leading-snug text-fg-muted line-clamp-2"
+          >
+            {busy && (
+              <span aria-hidden className="pulse-dot mr-1 text-accent">
+                ●
+              </span>
+            )}
             {note}
           </span>
         )}
@@ -154,6 +164,7 @@ export function AgentCard({
           blocked={pending.blocked}
           confirmLabel="Push now"
           ackLabel="I confirm these commits are ready to push"
+          requireAck
           busy={busy}
           onConfirm={(ack) => void confirmPush(ack)}
           onCancel={() => setPending(null)}

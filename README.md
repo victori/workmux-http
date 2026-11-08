@@ -43,6 +43,7 @@ default tmux server already running your sessions (or set
 | `WORKMUX_HTTP_FIXTURES` | unset | Directory with `list-all.json`, `status-all.json`, `output-<paneId>.txt` → fixture mode (no tmux/workmux needed; sends are simulated). |
 | `WORKMUX_<KIND>_COMMIT_CMD` | **unset = off** | **Default off:** with none set, every worktree keeps the existing agent-commit path (send `commit` to the agent). Direct-commit command for agent kind `<KIND>`: `WORKMUX_OMP_COMMIT_CMD` / `WORKMUX_OPENCODE_COMMIT_CMD` (interchangeable — workmux reports opencode as `omp`), `WORKMUX_CLAUDE_COMMIT_CMD`, `WORKMUX_CODEX_COMMIT_CMD`, or any other kind uppercased with non-alphanumerics → `_`. When set for a worktree's agent kind, the diff view's Commit becomes a message box running this command in the worktree (the commit message replaces the `{{COMMIT_MSG}}` token where present, appended otherwise; whole-token is safest, substring works inside shell wrappers with context escaping). The command must be an executable on the server's PATH — spawned with **no shell**, so shell functions/aliases (`.zshrc`) never resolve; env vars the command needs must be exported to the server process. To reference a zsh function anyway: `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"` (interactive zsh loads `~/.zshrc`; the placeholder is substituted inside the `-c` string, shell-escaped per quoting context). |
 | `WORKMUX_COMMIT_TIMEOUT_MS` | `300000` | Timeout for the direct-commit command (AI commit tools can run minutes). |
+| `WORKMUX_<KIND>_PUSH_CMD` | **unset = plain `git push`** | Per-kind push command (same kind resolution + `OMP`↔`OPENCODE` aliasing as the commit vars). Tokens: `{{BRANCH}}` and `{{REMOTE}}` (origin) — whole-token = one argv element, substring = context-escaped inside shell wrappers; no `{{BRANCH}}` token → branch appended last. The wrapper owns flags (`-u` etc). To inherit your zsh like the commit path: `WORKMUX_OMP_PUSH_CMD="zsh -ic 'git push -u {{REMOTE}} {{BRANCH}}'"`. |
 | `WORKMUX_PUSH_TIMEOUT_MS` | `120000` | Timeout for `git push` (network-bound). |
 
 ### VPN access model
@@ -104,12 +105,17 @@ protection).
   exact commits that would be published (sha + subject, capped at 20; tap a
   commit with a body to expand the full message) plus warnings — first push
   (`creates origin/<branch> + sets upstream`) and divergence (`remote has N
-  newer commits`); the checkbox reads "I confirm these commits are ready to
-  push". The confirmation token binds HEAD sha + commit list, so commits
-  added after you open the dialog force re-review. Push runs async via the
-  operations registry. **No force-push code path exists**; a
-  non-fast-forward is rejected by the remote and surfaced. `ahead` reflects
-  the last local `git status` (remote refs move when something fetches).
+  newer commits`). Push always requires ticking "I confirm these commits are
+  ready to push" — even with zero warnings. On confirm the dialog closes
+  immediately and the card shows a pulsing `pushing…` indicator while the
+  push runs async via the operations registry, ending in an inline ✓/error
+  note. The confirmation token binds HEAD sha + commit list, so commits
+  added after you open the dialog force re-review. **No force-push code path
+  exists**; a non-fast-forward is rejected by the remote and surfaced.
+  A per-kind `WORKMUX_<KIND>_PUSH_CMD` replaces the built-in `git push`
+  (e.g. an interactive-zsh wrapper, same pattern as the commit commands —
+  see the env table). `ahead` reflects the last local `git status` (remote
+  refs move when something fetches).
 - **Destructive actions** (merge, remove worktree, stop agent) always
   prepare → show exact target + warnings → confirm token → execute with
   re-validation; each token is single-use. No auto-retry anywhere; uncertain
@@ -157,16 +163,17 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 224 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 233 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
   divergence, and no-origin blocking).
-- `npx playwright test` — 25 e2e tests at iPhone 13 viewport against the
+- `npx playwright test` — 26 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
   reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
   pending-changes + direct-commit contract and graceful degradation,
-  push badge/contract paths, theme switching + persistence,
+  push badge/contract paths incl. execute-token rejection,
+  theme switching + persistence,
   host/origin/header boundary, confirm-token rejection).
 - `npm run typecheck` — app + server projects clean.
 

@@ -25,6 +25,7 @@ export interface AppConfig {
    * commit for that kind; the UI keeps the agent-commit path.
    */
   commitCmdFor: (kind: string | null) => string | null
+  pushCmdFor: (kind: string | null) => string | null
 }
 
 const DEFAULT_STALE_AFTER_SECS = 3600
@@ -78,6 +79,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       const norm = kind.toUpperCase().replace(/[^A-Z0-9]/g, '_')
       for (const alias of KIND_ALIASES[norm] ?? [norm]) {
         const cmd = (env[`WORKMUX_${alias}_COMMIT_CMD`] ?? '').trim()
+        if (cmd !== '') return cmd
+      }
+      return null
+    },
+    pushCmdFor: (kind) => {
+      if (!kind) return null
+      const norm = kind.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+      for (const alias of KIND_ALIASES[norm] ?? [norm]) {
+        const cmd = (env[`WORKMUX_${alias}_PUSH_CMD`] ?? '').trim()
         if (cmd !== '') return cmd
       }
       return null

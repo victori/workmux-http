@@ -145,13 +145,20 @@ describe('AgentCard push', () => {
     render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
     fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
     const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Push now' }))
+    // Push always gates on an explicit ack, even with zero warnings.
+    const confirmBtn = within(dialog).getByRole('button', { name: 'Push now' })
+    expect(confirmBtn).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /ready to push/ }))
+    fireEvent.click(confirmBtn)
+    // Dialog closes immediately; progress moves to the card.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('status')).toHaveTextContent('pushing…')
     await waitFor(() =>
       expect(mockApi.execute).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'push', targetId: 'wt_1', confirmToken: 'tok-2' }),
       ),
     )
-    expect(await screen.findByRole('status', {}, { timeout: 3000 })).toHaveTextContent(/pushed.*main -> origin\/main/)
+    expect(await screen.findByText(/✓ pushed.*main -> origin\/main/, {}, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('expands the full commit message on click and uses push-specific ack wording', async () => {
@@ -218,7 +225,8 @@ describe('AgentCard push', () => {
     render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
     fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
     const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /ready to push/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Push now' }))
-    expect(await screen.findByRole('status', {}, { timeout: 3000 })).toHaveTextContent(/non-fast-forward/)
+    expect(await screen.findByText(/non-fast-forward/, {}, { timeout: 3000 })).toBeInTheDocument()
   })
 })

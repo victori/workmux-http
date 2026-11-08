@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
@@ -242,5 +242,85 @@ describe('push action (real git + bare remote)', () => {
     expect(p.blocked).toMatch(/no origin remote/)
     rmSync(orphan, { recursive: true, force: true })
     rmSync(fx2, { recursive: true, force: true })
+  })
+
+  test('should run the configured WORKMUX_<KIND>_PUSH_CMD instead of git push', async () => {
+    git(['checkout', '-qb', 'feature-x'])
+    writeFileSync(path.join(repo, 'fx.txt'), 'x\n')
+    git(['add', 'fx.txt'])
+    git(['commit', '-qm', 'feat: fx'])
+
+    const log = path.join(fixtureDir, 'push-args.log')
+    const script = path.join(fixtureDir, 'push-wrapper.sh')
+    writeFileSync(script, `#!/bin/sh\necho "ARGS:$*" >> "${log}"\ngit push -u origin "$1"\n`)
+    chmodSync(script, 0o755)
+
+    const fx3 = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-pushcmd-'))
+    writeFileSync(
+      path.join(fx3, 'list-all.json'),
+      JSON.stringify([
+        {
+          project: 'repo',
+          project_path: repo,
+          handle: 'repo',
+          branch: 'feature-x',
+          path: repo,
+          is_main: true,
+          mode: 'window',
+          has_uncommitted_changes: false,
+          is_open: true,
+          agent_statuses: ['waiting'],
+          created_at: 1700000000,
+        },
+      ]),
+    )
+    writeFileSync(
+      path.join(fx3, 'status-all.json'),
+      JSON.stringify({
+        agents: [
+          {
+            worktree: 'repo',
+            branch: 'feature-x',
+            project: 'repo',
+            project_path: repo,
+            status: 'waiting',
+            elapsed_secs: 1,
+            title: null,
+            pane_id: '%1',
+            workdir: repo,
+            agent_kind: 'omp',
+            session: 's',
+            window_name: 'w',
+            updated_ts: 1700000000,
+          },
+        ],
+        target_errors: [],
+      }),
+    )
+    const cfg3 = {
+      ...loadConfig({ WORKMUX_OMP_PUSH_CMD: `${script} {{BRANCH}} {{REMOTE}}` }),
+      fixtureDir: fx3,
+    }
+    const disc3 = new Discovery(cfg3, idleTmux, new Workmux())
+    const ops3 = new Operations()
+    const mgmt3 = new Management(cfg3, idleTmux, new Workmux(), disc3, ops3)
+
+    const p = await mgmt3.prepare({ action: 'push', targetId: wtId() })
+    expect(p.warnings.join(' ')).toMatch(/configured push command decides/)
+    const op = await mgmt3.execute({
+      action: 'push',
+      targetId: wtId(),
+      acceptWarnings: true,
+      confirmToken: p.confirmToken!,
+      requestId: 'r9',
+    })
+    for (let i = 0; i < 50 && (ops3.get(op.id)?.state ?? 'running') === 'running'; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    expect(ops3.get(op.id)?.state).toBe('done')
+    expect(readFileSync(log, 'utf8')).toContain('ARGS:feature-x origin')
+    expect(rgit(['rev-parse', '--short', 'feature-x']).trim()).toBe(git(['rev-parse', '--short', 'HEAD']).trim())
+    git(['checkout', '-q', 'main'])
+    rmSync(fx3, { recursive: true, force: true })
   })
 })

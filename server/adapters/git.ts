@@ -170,6 +170,12 @@ export async function runCommit(cwd: string, argv: string[], timeoutMs: number):
   return { code: res.code, stdout: res.stdout, stderr: res.stderr }
 }
 
+/** Run a configured push command (argv from buildPushArgv) in the worktree. */
+export async function runPush(cwd: string, argv: string[], timeoutMs: number): Promise<CommitRun> {
+  const res = await run(argv, { cwd, timeoutMs })
+  return { code: res.code, stdout: res.stdout, stderr: res.stderr }
+}
+
 /** Resolve base branch: .workmux.yaml base_branch, then origin/HEAD, else null. */
 export async function resolveBase(cwd: string): Promise<string | null> {
   const yaml = await readWorkmuxBase(cwd)

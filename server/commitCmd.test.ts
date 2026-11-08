@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCommitArgv, tokenizeCommand } from './commitCmd.js'
+import { buildCommitArgv, buildPushArgv, tokenizeCommand } from './commitCmd.js'
 
 describe('tokenizeCommand', () => {
   it('should split on whitespace', () => {
@@ -144,5 +144,37 @@ describe('buildCommitArgv', () => {
       '-ic',
       'opencode-commit -a ""',
     ])
+  })
+})
+
+describe('buildPushArgv', () => {
+  it('should substitute whole-token branch and remote as single argv elements', () => {
+    expect(buildPushArgv('my-push {{BRANCH}} {{REMOTE}}', { branch: 'feat x', remote: 'origin' })).toEqual([
+      'my-push',
+      'feat x',
+      'origin',
+    ])
+  })
+
+  it('should substitute substring placeholders inside a zsh -c string', () => {
+    const argv = buildPushArgv(`zsh -ic 'git push -u origin {{BRANCH}}'`, { branch: 'main', remote: 'origin' })
+    expect(argv).toEqual(['zsh', '-ic', `git push -u origin 'main'`])
+  })
+
+  it('should escape hostile branch inside double-quoted shell region', () => {
+    const argv = buildPushArgv(`zsh -ic 'git push origin "{{BRANCH}}"'`, {
+      branch: 'm"$(id)`x`',
+      remote: 'origin',
+    })
+    expect(argv).toHaveLength(3)
+    expect(argv[2]).toBe('git push origin "m\\"\\$(id)\\`x\\`"')
+  })
+
+  it('should append branch when no placeholder is present', () => {
+    expect(buildPushArgv('my-push', { branch: 'main', remote: 'origin' })).toEqual(['my-push', 'main'])
+  })
+
+  it('should throw on empty command', () => {
+    expect(() => buildPushArgv('   ', { branch: 'main', remote: 'origin' })).toThrow(/empty/)
   })
 })
