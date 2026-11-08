@@ -133,7 +133,7 @@ describe('mode control', () => {
     expect(onModeChange).toHaveBeenCalledWith('terminal')
   })
 
-  it('hides and inerts the reader subtree while terminal is active', () => {
+  it('keeps the header visible and hides/inerts only the reader body in terminal mode', () => {
     const { container } = render(
       <AgentViewPanel
         agent={A}
@@ -142,15 +142,21 @@ describe('mode control', () => {
         connection="online"
         mode="terminal"
         active={false}
+        terminal={<div data-testid="term-slot" />}
         onSwitch={() => undefined}
         onPrevious={() => undefined}
         onOpenDiff={() => undefined}
         onModeChange={() => undefined}
       />,
     )
-    const root = container.querySelector(':scope > div')
-    expect(root).toHaveAttribute('hidden')
-    expect(root).toHaveAttribute('inert')
+    // Header (mode toggle, Diff, Stop) stays reachable in Terminal mode.
+    expect(screen.getByRole('button', { name: 'Reader' }).closest('[hidden]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Diff' }).closest('[hidden]')).toBeNull()
+    // Terminal slot renders; reader body is hidden and inert.
+    expect(screen.getByTestId('term-slot')).toBeInTheDocument()
+    const body = container.querySelector('div[hidden][inert]')
+    expect(body).not.toBeNull()
+    expect(body!.querySelector('[aria-label*="agent output" i], .terminal-output, textarea')).not.toBeNull()
   })
 
   it('disables mode buttons without a target', () => {

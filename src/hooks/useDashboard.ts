@@ -39,11 +39,13 @@ export function deriveConnection(
  * fetches fresh on return, foregrounding, or network recovery. Overlapping
  * refreshes are collapsed by the server-side TTL cache.
  */
-export function useDashboard(): DashboardState {
+export function useDashboard(paused = false): DashboardState {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastOkAt, setLastOkAt] = useState<number | null>(null)
   const inFlight = useRef(false)
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
 
   const refresh = useCallback((force = false) => {
     if (inFlight.current) return
@@ -66,10 +68,10 @@ export function useDashboard(): DashboardState {
   useEffect(() => {
     refresh(true)
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh(false)
+      if (!pausedRef.current && document.visibilityState === 'visible') refresh(false)
     }, POLL_MS)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh(true)
+      if (!pausedRef.current && document.visibilityState === 'visible') refresh(true)
     }
     const onOnline = () => refresh(true)
     document.addEventListener('visibilitychange', onVisible)
@@ -82,6 +84,16 @@ export function useDashboard(): DashboardState {
       window.removeEventListener('focus', onVisible)
     }
   }, [refresh])
+
+  // Resuming from a paused stretch (e.g. Terminal mode, where the pane is
+  // live over WS and polling would only contend with the attach): refresh
+  // immediately and reset the freshness clock so a paused gap never shows
+  // as a "data may be outdated" flash.
+  useEffect(() => {
+    if (paused) return
+    setLastOkAt(Date.now())
+    refresh(true)
+  }, [paused, refresh])
 
   const connection = deriveConnection(snapshot, error, lastOkAt)
 

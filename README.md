@@ -53,6 +53,10 @@ forwarding the VPN tunnel to loopback (e.g. WireGuard `ListenPort` proxy,
 `ssh -L`, or tailscale serve) **or** bind to the VPN interface address and add
 it to `WORKMUX_ALLOWED_HOSTS`. There is no app authentication — the network
 boundary is the security boundary, so do not expose this on a public interface.
+HTML responses carry `Cache-Control: no-store` (Safari always gets the fresh
+bundle after a rebuild; hashed assets are `immutable`, cached forever), so a
+plain reload after `npm run build` is enough — no restart needed for frontend
+changes.
 Mutations additionally require a same-origin request carrying
 `x-workmux-request: 1`; foreign `Host` headers are rejected (DNS-rebinding
 protection).
@@ -164,7 +168,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 238 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 243 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,

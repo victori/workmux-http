@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { AgentView, PreparedAction } from '@shared/types'
 import type { ConnectionState } from '../../hooks/useDashboard'
 import { api, newRequestId } from '../../lib/api'
@@ -16,6 +17,8 @@ export interface AgentViewPanelProps {
   recents: string[]
   connection: ConnectionState
   mode: AgentMode
+  /** Rendered in place of the reader body when mode === 'terminal'. */
+  terminal?: ReactNode
   /** False while Terminal owns the screen: pauses polling, hides subtree. */
   active: boolean
   onSwitch: (id: string) => void
@@ -36,6 +39,7 @@ export function AgentViewPanel({
   recents,
   connection,
   mode,
+  terminal,
   active,
   onSwitch,
   onPrevious,
@@ -88,7 +92,7 @@ export function AgentViewPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" hidden={!active} inert={!active}>
+    <div className="flex h-full min-h-0 flex-col">
       <header className="safe-top shrink-0 border-b border-line bg-surface">
         <div className="flex items-center gap-2 px-3 py-2">
           <button
@@ -145,12 +149,16 @@ export function AgentViewPanel({
         </div>
       </header>
 
-      {agent ? (
-        <>
-          <OutputPane agent={agent} active={active} onOpenSwitcher={() => setSwitcherOpen(true)} outputRef={outputRef} />
-          <Composer agent={agent} connection={connection} outputRef={outputRef} />
-        </>
-      ) : (
+      {mode === 'terminal' && terminal && (
+        <div className="flex min-h-0 flex-1 flex-col">{terminal}</div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col" hidden={mode !== 'reader'} inert={mode !== 'reader'}>
+        {agent ? (
+          <>
+            <OutputPane agent={agent} active={active} onOpenSwitcher={() => setSwitcherOpen(true)} outputRef={outputRef} />
+            <Composer agent={agent} connection={connection} outputRef={outputRef} />
+          </>
+        ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="text-sm font-medium text-fg">No agent selected</p>
           <p className="max-w-xs text-xs text-fg-muted">
@@ -163,7 +171,8 @@ export function AgentViewPanel({
             Choose agent
           </button>
         </div>
-      )}
+        )}
+      </div>
 
       {stopPrepared && (
         <ConfirmDialog

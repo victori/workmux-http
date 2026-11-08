@@ -372,8 +372,21 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     return null
   }
   const initialPublic = findIndexHtml()
+  // HTML must never be cached: assets are content-hashed (safe to keep
+  // forever), index.html is not — a stale index.html pins a stale bundle.
+  // no-store also keeps Safari out of bfcache for the document, which used
+  // to resume the SPA with suspended poll loops.
+  app.addHook('onSend', (req, reply, payload, done) => {
+    const ct = String(reply.getHeader('content-type') ?? '')
+    if (ct.includes('text/html')) {
+      reply.header('cache-control', 'no-store, no-cache, must-revalidate')
+      reply.header('pragma', 'no-cache')
+      reply.header('expires', '0')
+    }
+    done()
+  })
   if (initialPublic) {
-    app.register(fastifyStatic, { root: path.dirname(initialPublic) })
+    app.register(fastifyStatic, { root: path.dirname(initialPublic), maxAge: '1y', immutable: true })
   }
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/')) {
@@ -387,7 +400,12 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     }
     if (!initialPublic) {
       // Built after startup: read directly (fastify-static wasn't registered).
-      reply.type('text/html').send(fs.readFileSync(index))
+      reply
+        .header('cache-control', 'no-store, no-cache, must-revalidate')
+        .header('pragma', 'no-cache')
+        .header('expires', '0')
+        .type('text/html')
+        .send(fs.readFileSync(index))
       return
     }
     reply.sendFile('index.html')

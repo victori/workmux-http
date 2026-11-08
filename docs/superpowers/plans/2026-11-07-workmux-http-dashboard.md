@@ -512,3 +512,32 @@ original requirements above remain in force unless noted.
   AgentCard now surfaces the underlying error message instead of the bare
   "push failed". +3 api unit tests = 238 vitest. Test mocks of lib/api
   now spread the real module so util exports survive vi.mock.
+
+### Terminal-mode header + stale fixes (2026-11-08)
+- Header vanished in Terminal mode: AgentViewPanel root carried
+  hidden/inert={!active}, hiding the mode toggle, Diff, and Stop with the
+  reader. Root now always renders; only the reader body (OutputPane +
+  Composer) is hidden/inert when mode !== 'reader'; TerminalView is passed
+  into the panel via a new `terminal` slot prop (App no longer stacks it as
+  a sibling — fixes the collapsed/duplicated h-full layout too).
+- "Data may be outdated" during Terminal: dashboard polls stalled while the
+  pty attach contended with discovery subprocesses (observed /api/dashboard
+  pending >10 s live) tripping the stale threshold. Dashboard polling is
+  now paused while Terminal mode is active (the pane is live over WS);
+  resume forces refresh(true) and resets lastOkAt so no stale flash.
+- Tests: rewrote the old whole-panel-hidden contract test → header-visible
+  + reader-body-hidden + slot assertions; +2 useDashboard pause hook tests
+  (interval skipped, forced resume refresh, no stale flash) = 240 vitest.
+  Live proof: toggle visible at +14.5 s in terminal, zero stale banner,
+  clean return to reader.
+
+### No-cache headers for the SPA document (2026-11-08)
+- Root cause of "Safari has old bundle": index.html was served with
+  `public, max-age=0` + etag; Safari sometimes skips revalidation.
+- An onSend hook stamps every text/html response (/, SPA fallback,
+  late-built direct read) with `no-store, no-cache, must-revalidate` +
+  Pragma/Expires — also keeps Safari out of bfcache for the document.
+  Hashed assets now serve `public, max-age=31536000, immutable`
+  (content-addressed, safe forever).
+- +3 contract tests (document no-store, fallback no-store, asset
+  immutable) = 243 vitest; headers verified live via curl.

@@ -27,8 +27,8 @@ const NAV_TABS = [
 ] as const
 
 export default function App() {
-  const dash = useDashboard()
   const [route, setRoute] = useState<Route>({ view: 'dashboard' })
+  const dash = useDashboard(route.view === 'agent' && route.mode === 'terminal')
   const [agentId, setAgentId] = useState<string | null>(() => loadTab<string | null>('agentId', null))
   const [recents, setRecents] = useState<string[]>(() => loadTab<string[]>('recents', []))
   const [sessionFilter, setSessionFilter] = useState<string | null>(() => loadTab<string | null>('sessionFilter', null))
@@ -202,20 +202,22 @@ export default function App() {
                 connection={dash.connection}
                 mode={route.mode}
                 active={route.mode === 'reader'}
+                terminal={
+                  route.mode === 'terminal' && agentId ? (
+                    <TerminalView
+                      key={agentId}
+                      agentId={agentId}
+                      agentLabel={currentAgent ? `${currentAgent.project}/${currentAgent.name}` : 'target ended'}
+                      theme={THEMES[themeId].xterm}
+                      onClose={() => setRoute({ view: 'agent', mode: 'reader' })}
+                    />
+                  ) : undefined
+                }
                 onSwitch={openAgent}
                 onPrevious={goPrevious}
                 onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
                 onModeChange={(mode) => setRoute({ view: 'agent', mode })}
               />
-              {route.mode === 'terminal' && agentId && (
-                <TerminalView
-                  key={agentId}
-                  agentId={agentId}
-                  agentLabel={currentAgent ? `${currentAgent.project}/${currentAgent.name}` : 'target ended'}
-                  theme={THEMES[themeId].xterm}
-                  onClose={() => setRoute({ view: 'agent', mode: 'reader' })}
-                />
-              )}
             </>
           )}
           {route.view === 'diff' && (

@@ -95,12 +95,14 @@ vi.mock('./features/agent/AgentView', () => ({
     agent: AgentView | null
     mode: string
     active: boolean
+    terminal?: React.ReactNode
     onSwitch: (id: string) => void
     onModeChange: (m: 'reader' | 'terminal') => void
   }) => (
     <div data-testid="reader" data-mode={props.mode} data-active={String(props.active)} data-agent={props.agent?.id ?? ''}>
       <button onClick={() => props.onModeChange('terminal')}>reader-to-terminal</button>
       <button onClick={() => props.onSwitch('%2')}>reader-switch</button>
+      {props.mode === 'terminal' && props.terminal}
     </div>
   ),
 }))
