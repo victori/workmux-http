@@ -20,6 +20,8 @@ coverage/
 
 # backups (untracked-file safety copies)
 *.bak
+*.bak*
+*.orig*
 
 # orchestration state
 .superpowers/
