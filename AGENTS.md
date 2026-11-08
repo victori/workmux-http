@@ -106,7 +106,9 @@ it the default in code or docs.
   union in `App.tsx` (`useState`), not the URL.
 - Named function component exports + exported `interface XProps` (App is the
   only default export). Feature folders own their components.
-- Every mutation call carries `requestId: crypto.randomUUID()`.
+- Every mutation call carries `requestId: newRequestId()` (`src/lib/api.ts`
+  — `crypto.randomUUID` when available, timestamp+random fallback otherwise;
+  `randomUUID` is secure-context-gated and undefined over LAN-IP http).
 - Destructive UI flow: `api.prepare` → `ConfirmDialog` (exact `targetLabel`
   + warnings ack) → `api.execute` (token) → poll `api.operation` at 1 s.
 - State persistence: `loadPref/savePref` (localStorage, `wmhttp:` prefix,
@@ -140,7 +142,8 @@ it the default in code or docs.
 
 ## Important Files
 
-- `server/index.ts` — routes, security hooks, WS, SPA fallback, startup
+- `server/index.ts` — routes, security hooks, WS, SPA fallback, html
+  no-cache headers (onSend hook), startup
 - `shared/types.ts` — API contracts (edit first for API changes)
 - `server/config.ts` — env parsing + `BOUNDS` limits
 - `server/security.ts` — host/origin/header gates (no login by design)

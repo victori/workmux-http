@@ -2,6 +2,12 @@
 
 Date: 2026-11-07
 Status: Implemented (2026-11-07). Verification: 222 vitest (git adapter +4, push integration +7 vs local bare remote, AgentCard jsdom +6), 25 Playwright e2e, typecheck + build clean, live read-only smoke (real fleet: ahead counts on agents, prepare returned 3-commit review list; no push executed against real remotes). Canonical amendment: docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md § "Push button + unpushed indicator".
+Post-ship follow-ups (2026-11-08, see the same canonical § Follow-ups 2–4):
+requestIds via `newRequestId()` (crypto.randomUUID is undefined over LAN-IP
+http — was the literal "push failed" on iPhone); dialog always requires ack
+and closes on confirm (card shows pulsing `pushing…`); commit rows clickable
+with bodies (`%b`, capped); `WORKMUX_<KIND>_PUSH_CMD` configurable push;
+`●N` pending-changes badge (separate plan).
 
 ## Goal
 

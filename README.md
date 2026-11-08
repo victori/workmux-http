@@ -41,6 +41,8 @@ default tmux server already running your sessions (or set
 | `WORKMUX_TMUX_SOCKET` | auto (`tmux display-message -p '#{socket_path}'`) | Explicit tmux socket path. |
 | `WORKMUX_REPOS` | auto-discovered from workmux | Comma-separated project roots (informational). |
 | `WORKMUX_HTTP_FIXTURES` | unset | Directory with `list-all.json`, `status-all.json`, `output-<paneId>.txt` → fixture mode (no tmux/workmux needed; sends are simulated). |
+| `WORKMUX_HTTP_STALE_AFTER` | `3600` | Seconds after which an agent's status report is treated as stale (per-agent `Stale` badge; worktrees with no recent update count as idle). |
+| `WORKMUX_HTTP_MAX_OWNED_TERMINALS` | `4` | Concurrent advanced-terminal (`wmhttp-adv-*` owned) sessions allowed; further attaches are refused with the limit in the error. |
 | `WORKMUX_<KIND>_COMMIT_CMD` | **unset = off** | **Default off:** with none set, every worktree keeps the existing agent-commit path (send `commit` to the agent). Direct-commit command for agent kind `<KIND>`: `WORKMUX_OMP_COMMIT_CMD` / `WORKMUX_OPENCODE_COMMIT_CMD` (interchangeable — workmux reports opencode as `omp`), `WORKMUX_CLAUDE_COMMIT_CMD`, `WORKMUX_CODEX_COMMIT_CMD`, or any other kind uppercased with non-alphanumerics → `_`. When set for a worktree's agent kind, the diff view's Commit becomes a message box running this command in the worktree (the commit message replaces the `{{COMMIT_MSG}}` token where present, appended otherwise; whole-token is safest, substring works inside shell wrappers with context escaping). The command must be an executable on the server's PATH — spawned with **no shell**, so shell functions/aliases (`.zshrc`) never resolve; env vars the command needs must be exported to the server process. To reference a zsh function anyway: `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"` (interactive zsh loads `~/.zshrc`; the placeholder is substituted inside the `-c` string, shell-escaped per quoting context). |
 | `WORKMUX_COMMIT_TIMEOUT_MS` | `300000` | Timeout for the direct-commit command (AI commit tools can run minutes). |
 | `WORKMUX_<KIND>_PUSH_CMD` | **unset = plain `git push`** | Per-kind push command (same kind resolution + `OMP`↔`OPENCODE` aliasing as the commit vars). Tokens: `{{BRANCH}}` and `{{REMOTE}}` (origin) — whole-token = one argv element, substring = context-escaped inside shell wrappers; no `{{BRANCH}}` token → branch appended last. The wrapper owns flags (`-u` etc). To inherit your zsh like the commit path: `WORKMUX_OMP_PUSH_CMD="zsh -ic 'git push -u {{REMOTE}} {{BRANCH}}'"`. |
@@ -85,8 +87,10 @@ protection).
   composer with per-agent drafts, one-shot Ctrl chord + key toolbar, literal
   send via atomic tmux paste buffer.
 - **Diff view** — WIP (uncommitted) and Review (vs resolved base) unified diffs,
-  per-hunk stage / unstage / split / undo, hunk comments, commit (sends a
-  literal `commit` to the owning agent), merge behind exact-target confirm.
+  per-hunk stage / unstage / split / undo, hunk comments, commit (direct via
+  `WORKMUX_<KIND>_COMMIT_CMD` when configured — button disabled when there is
+  nothing to commit; otherwise a literal `commit` sent to the owning agent),
+  merge behind exact-target confirm.
   WIP mode additionally lists **pending changes** — untracked and unstaged
   files, with per-file *Add* and *Add all* (conflicts listed, never auto-added)
   — and, when `WORKMUX_<KIND>_COMMIT_CMD` is configured for the worktree's
@@ -137,6 +141,10 @@ protection).
   action — it warns that it changes the layout for every client attached to
   the window, needs your confirmation, and the size label updates only after
   the server acknowledges. Owned sessions are excluded from the dashboard.
+  While Terminal mode is open, dashboard polling pauses (the pane is live
+  over WS, and the pty attach can stall `/api/dashboard` past the stale
+  threshold); leaving Terminal forces an immediate refresh, so Terminal use
+  never triggers a spurious "data may be outdated" banner.
 
 ## Architecture
 

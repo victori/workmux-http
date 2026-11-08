@@ -10,6 +10,10 @@ amendment: `docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md`
 § "Pending changes + configurable commit". Disclosed: real
 opencode-commit/claude-commit not invoked in CI (fake-script harness
 proves argv); conflict resolution UI out of scope.
+Post-ship follow-up (2026-11-08): Commit now disabled when the worktree has
+nothing to commit; `DiffResponse.pendingKnown` (fail-open when git status
+unreadable); server rejects `nothing_to_commit` for stale views. Canonical
+§ "Commit-now disabled when clean".
 
 ## Goal
 

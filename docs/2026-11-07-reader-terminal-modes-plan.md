@@ -10,6 +10,12 @@ tmux/workmux 0.1.280. Canonical amendment:
 "Reader/Terminal modes". Disclosed: iOS Safari real-device pass still
 recommended; explicit fit lands the window at rows−status (tmux client
 accounting; client viewport equals PTY rows).
+Post-ship fixes (2026-11-08, canonical § "Terminal-mode header + stale
+fixes"): the panel header (mode toggle, Diff, Stop) is now always visible —
+the whole-panel hidden/inert was replaced by hiding only the reader body, and
+TerminalView renders into a `terminal` slot inside the panel; dashboard
+polling pauses while Terminal is active (attach stalls /api/dashboard), with
+a forced refresh on resume.
 
 ## Goal
 
