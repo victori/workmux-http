@@ -168,6 +168,9 @@ export class Discovery {
     for (const a of agents ?? []) {
       const pane = paneById.get(a.pane_id)
       if (!pane || pane.dead) continue
+      // workmux registers any project-window pane as an agent record;
+      // kind-less ones are plain shells (dev servers, zsh) — not agents.
+      if (!a.agent_kind) continue
       const project = a.project ?? path.basename(a.workdir)
       const projectPath = a.project_path ?? a.workdir
       const raw: AgentStatus = a.status in KNOWN_STATUSES ? (a.status as AgentStatus) : 'stale'

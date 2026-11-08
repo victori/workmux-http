@@ -73,7 +73,10 @@ protection).
 
 - **Dashboard** — every managed agent (status, elapsed, branch, dirty state) and
   every worktree (branch, uncommitted, PR link), searchable, filterable,
-  sortable; preferences persist per tab.
+  sortable; preferences persist per tab. Only panes workmux recognizes as
+  agents (with an `agent_kind`) are listed — kind-less records such as a
+  plain zsh pane running your dev server are filtered out (they aren't
+  message targets either).
 - **Themes** — Night (default), Gruvbox, and Twilight, switchable from the ⚙
   sheet on the dashboard; the choice is durable (all tabs) and applies to
   every surface including the advanced terminal and the iPhone chrome tint.
@@ -191,7 +194,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 298 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 300 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,

@@ -649,3 +649,13 @@ original requirements above remain in force unless noted.
   live mutation (removed env row -> failure -> restore -> green).
 - Also fixes latent README drift (e2e count 26 -> 27). Verification delta:
   +11 vitest = 298 exit 0; typecheck clean.
+
+### Kind-less pane filtering (2026-11-08, user report)
+- workmux registers every pane in a project window as an agent record; a zsh
+  pane running ./run.sh surfaced as a second "agent" for the same worktree
+  (agent_kind null, status done). Discovery now drops records with no
+  `agent_kind` when building the snapshot — they leave the agent list AND
+  `agentTargets()` (consistent: invisible panes are not message targets).
+  Tradeoff, accepted deliberately: panes running an agent CLI that workmux
+  cannot classify are hidden too; upstream kind detection is the source.
+- +2 discovery tests (null/undefined kind excluded; targets exclude them).

@@ -238,3 +238,34 @@ describe('worktree identity', () => {
     expect(worktreeId('p', '/a')).not.toBe(worktreeId('q', '/a'))
   })
 })
+
+describe('non-agent pane filtering', () => {
+  test('should exclude kind-less agent records (shells/dev servers) from the dashboard', async () => {
+    const panes = [pane('%1', 's'), pane('%2', 's'), pane('%3', 's')]
+    const discovery = new Discovery(
+      cfg,
+      fakeTmux(panes),
+      fakeWorkmux(
+        [worktreeRecord('wt-a')],
+        [
+          agentRecord('%1'),
+          agentRecord('%2', { agent_kind: null }),
+          agentRecord('%3', { agent_kind: undefined, title: './run.sh' }),
+        ],
+      ),
+    )
+    const snap = await discovery.snapshot()
+    expect(snap.agents.map((a) => a.id)).toEqual(['%1'])
+  })
+
+  test('should not treat kind-less panes as message targets', async () => {
+    const discovery = new Discovery(
+      cfg,
+      fakeTmux([pane('%1', 's'), pane('%2', 's')]),
+      fakeWorkmux([worktreeRecord('wt-a')], [agentRecord('%1'), agentRecord('%2', { agent_kind: null })]),
+    )
+    const targets = await discovery.agentTargets()
+    expect(targets.has('%1')).toBe(true)
+    expect(targets.has('%2')).toBe(false)
+  })
+})

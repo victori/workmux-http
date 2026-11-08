@@ -191,6 +191,9 @@ the visible viewport, never the expanded grid.
 
 - **Dashboard**: agents/worktrees tabs, search/sort/filters, per-agent
   pending badge (`●N`), unpushed indicator, connection banner, PR links.
+  Only workmux records with a recognized `agent_kind` are listed; kind-less
+  panes (plain shells, dev servers) are filtered out of both the agent
+  list and message targets.
 - **Agent view**: reader mode (captured output, opens at tail) ↔ terminal
   mode (live WS, mode header, pane-target warning); composer + explicit
   keys; session switcher; previous-agent action.
