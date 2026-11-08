@@ -304,3 +304,19 @@ original requirements above remain in force unless noted.
 - Verification: new adapter test (`null elapsed_secs` parses) = 111 vitest;
   live proof against workmux 0.1.280 with the offending agent present
   (8 agents parsed, 1 null-elapsed).
+
+### Theme support (2026-11-07, follow-on plan 2026-11-07-theme-support.md)
+- Added user-selectable themes: Night (default, unchanged palette), Gruvbox
+  (dark hard), Twilight (vim twilight role palette). Client-only; durable
+  `wmhttp:theme` pref; applies to all surfaces incl. xterm terminal (per-theme
+  ansi16 palette, live switch via `term.options.theme`) and iPhone chrome
+  (`meta theme-color`). ⚙ sheet on the dashboard header.
+- Mechanism: `src/lib/themes.ts` overrides the 14 Tailwind v4 `@theme` CSS
+  vars at runtime on `documentElement` + `data-theme`; utilities verified to
+  resolve overridden vars (browser probe: `.bg-surface` → #32302f under
+  gruvbox). Palette contract + WCAG audit: worst fg/accent/err contrast
+  4.29:1 across all themes.
+- Verification: +9 unit (contract/applyTheme/prefs/sheet) = 120 vitest;
+  +1 e2e (switch, computed-color, reload persistence) = 12 Playwright;
+  typecheck + build clean. Visual screenshot pass captured per theme;
+  contrast verified numerically (image inspection unavailable).

@@ -129,6 +129,11 @@ it the default in code or docs.
   depend on it). Any flex-column child that must scroll internally needs
   `min-h-0` + `overflow-auto`; without `min-h-0` it grows to content and
   the body scrolls instead (breaks follow-bottom/scroll logic silently).
+- Theming: NEVER hardcode colors in components — use the token utilities
+  (`bg-surface`, `text-fg-muted`, …). Palettes live ONLY in
+  `src/lib/themes.ts` (14 CSS-var tokens + per-theme xterm palette); a new
+  theme = one `Theme` entry + `THEME_IDS` + contract tests. Runtime switch =
+  `applyTheme` overrides the CSS vars; xterm follows via `term.options.theme`.
 - Data freshness = `deriveConnection(snapshot, error, lastOkAt)` (source
   health + polling) — NEVER `snapshot.stale` (that includes idle agents;
   those render as per-agent Stale badges only).
@@ -182,7 +187,7 @@ it the default in code or docs.
 
 - **Vitest 3** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  110 tests green baseline.
+  120 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

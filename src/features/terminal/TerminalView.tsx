@@ -5,27 +5,31 @@ import '@xterm/xterm/css/xterm.css'
 import type { TerminalServerMessage } from '@shared/types'
 import { terminalWsUrl } from '../../lib/api'
 
+import type { XtermPalette } from '../../lib/themes'
+
 export interface TerminalViewProps {
   agentId: string
   agentLabel: string
+  theme: XtermPalette
   onClose: () => void
-}
-
-const THEME = {
-  background: '#0b0f14',
-  foreground: '#dce3ea',
-  cursor: '#4cc2ff',
-  selectionBackground: '#263241',
 }
 
 const FIT_THROTTLE_MS = 250
 
-export function TerminalView({ agentId, agentLabel, onClose }: TerminalViewProps) {
+export function TerminalView({ agentId, agentLabel, theme, onClose }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const themeRef = useRef(theme)
+  themeRef.current = theme
   const lastFitRef = useRef(0)
+
+  // Live theme switching: xterm applies palette changes without remount.
+  useEffect(() => {
+    const term = termRef.current
+    if (term) term.options.theme = theme
+  }, [theme])
 
   const [status, setStatus] = useState<'connecting' | 'attached' | 'detached'>('connecting')
   const [detachReason, setDetachReason] = useState<string | null>(null)
@@ -122,7 +126,7 @@ export function TerminalView({ agentId, agentLabel, onClose }: TerminalViewProps
     const term = new Terminal({
       disableStdin: false,
       convertEol: false,
-      theme: THEME,
+      theme: themeRef.current,
       fontSize: 12,
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
     })

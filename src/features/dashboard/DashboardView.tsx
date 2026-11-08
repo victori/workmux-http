@@ -6,6 +6,8 @@ import { SegmentedTabs } from '../../components/SegmentedTabs'
 import { AgentCard } from './AgentCard'
 import { WorktreeCard, worktreeLabel } from './WorktreeCard'
 import { FilterSheet } from './FilterSheet'
+import { ThemeSheet } from './ThemeSheet'
+import type { ThemeId } from '../../lib/themes'
 import { filterAgents, filterWorktrees, sortAgents, sortWorktrees } from './agentSort'
 
 export interface DashboardViewProps {
@@ -17,6 +19,8 @@ export interface DashboardViewProps {
   onOpenDiff: (id: string, label: string) => void
   onOpenTerminal: (id: string) => void
   onCreate: () => void
+  themeId: ThemeId
+  onChangeTheme: (id: ThemeId) => void
 }
 
 type Tab = 'agents' | 'worktrees'
@@ -44,12 +48,15 @@ export function DashboardView({
   onOpenDiff,
   onOpenTerminal,
   onCreate,
+  themeId,
+  onChangeTheme,
 }: DashboardViewProps) {
   const [tab, setTab] = useState<Tab>(() => loadPref<Tab>('tab', 'agents'))
   const [sort, setSort] = useState<SortMode>(() => loadPref<SortMode>('sort', 'priority'))
   const [hideStale, setHideStale] = useState<boolean>(() => loadPref<boolean>('hideStale', false))
   const [query, setQuery] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [themeSheetOpen, setThemeSheetOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const selectedIdRef = useRef<string | null>(null)
@@ -206,6 +213,13 @@ export function DashboardView({
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setThemeSheetOpen(true)}
+              aria-label="Theme"
+              className="rounded-lg border border-line px-3 py-1.5 text-sm text-fg-muted"
+            >
+              ⚙
+            </button>
           </div>
         </div>
 
@@ -330,6 +344,13 @@ export function DashboardView({
           sessionFilter={sessionFilter}
           onClearSessionFilter={onClearSessionFilter}
           onClose={() => setSheetOpen(false)}
+        />
+      )}
+      {themeSheetOpen && (
+        <ThemeSheet
+          themeId={themeId}
+          onSelect={onChangeTheme}
+          onClose={() => setThemeSheetOpen(false)}
         />
       )}
     </div>

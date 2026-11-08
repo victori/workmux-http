@@ -97,6 +97,8 @@ function renderView(snap: DashboardSnapshot | null) {
       onOpenDiff={vi.fn()}
       onOpenTerminal={vi.fn()}
       onCreate={vi.fn()}
+      themeId="night"
+      onChangeTheme={vi.fn()}
     />,
   )
 }

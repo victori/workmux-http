@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentView } from '@shared/types'
 import { useDashboard } from './hooks/useDashboard'
 import { loadTab, saveTab } from './lib/storage'
+import { THEMES, applyTheme, loadThemeId, saveThemeId } from './lib/themes'
+import type { ThemeId } from './lib/themes'
 import { DashboardView } from './features/dashboard/DashboardView'
 import { SessionsView } from './features/dashboard/SessionsView'
 import { AgentViewPanel } from './features/agent/AgentView'
@@ -32,6 +34,16 @@ export default function App() {
   const [sessionFilter, setSessionFilter] = useState<string | null>(() => loadTab<string | null>('sessionFilter', null))
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [themeId, setThemeId] = useState<ThemeId>(() => loadThemeId())
+
+  useEffect(() => {
+    applyTheme(themeId)
+  }, [themeId])
+
+  const changeTheme = useCallback((id: ThemeId) => {
+    setThemeId(id)
+    saveThemeId(id)
+  }, [])
 
   const agents = dash.snapshot?.agents ?? []
   const worktrees = dash.snapshot?.worktrees ?? []
@@ -164,6 +176,8 @@ export default function App() {
               onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
               onOpenTerminal={openAgentTerminal}
               onCreate={() => setCreateOpen(true)}
+              themeId={themeId}
+              onChangeTheme={changeTheme}
             />
           )}
           {route.view === 'sessions' && (
@@ -198,6 +212,7 @@ export default function App() {
             <TerminalView
               agentId={route.agentId}
               agentLabel={`${currentAgent?.project ?? ''}/${currentAgent?.name ?? route.agentId}`}
+              theme={THEMES[themeId].xterm}
               onClose={() => setRoute({ view: 'agent' })}
             />
           )}

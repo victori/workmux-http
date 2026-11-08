@@ -64,6 +64,9 @@ protection).
 - **Dashboard** — every managed agent (status, elapsed, branch, dirty state) and
   every worktree (branch, uncommitted, PR link), searchable, filterable,
   sortable; preferences persist per tab.
+- **Themes** — Night (default), Gruvbox, and Twilight, switchable from the ⚙
+  sheet on the dashboard; the choice is durable (all tabs) and applies to
+  every surface including the advanced terminal and the iPhone chrome tint.
 - **Agent view** — live scrollback capture (2 s poll) opening at the tail
   (latest output), follow-bottom with jump-latest, composer with per-agent
   drafts, one-shot Ctrl chord + key toolbar, literal send via atomic tmux
@@ -115,11 +118,12 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 110 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 120 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket + real-git hunk staging).
-- `npx playwright test` — 11 e2e tests at iPhone 13 viewport against the
+- `npx playwright test` — 12 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
-  host/origin/header boundary, confirm-token rejection).
+  theme switching + persistence, host/origin/header boundary,
+  confirm-token rejection).
 - `npm run typecheck` — app + server projects clean.
 
 ## workmux TUI parity
