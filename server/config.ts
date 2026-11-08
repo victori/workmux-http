@@ -1,0 +1,74 @@
+import os from 'node:os'
+
+export interface AppConfig {
+  bind: string
+  port: number
+  /** null = resolve from default tmux server at startup. */
+  tmuxSocket: string | null
+  /** Extra repository paths supplementing tracked-project discovery. */
+  repos: string[]
+  allowedHosts: string[]
+  /** WORKMUX_ALLOWED_HOSTS='*': accepts any Host header. DNS-rebinding exposed — no login behind it. */
+  allowAnyHost: boolean
+  /** Directory with sanitized JSON fixtures; bypasses live workmux/tmux (e2e only). */
+  fixtureDir: string | null
+  staleAfterSecs: number
+  maxOwnedTerminals: number
+}
+
+const DEFAULT_STALE_AFTER_SECS = 3600
+const DEFAULT_MAX_OWNED_TERMINALS = 4
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const port = Number(env.WORKMUX_HTTP_PORT ?? 3000)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`invalid WORKMUX_HTTP_PORT: ${env.WORKMUX_HTTP_PORT}`)
+  }
+  const bind = env.WORKMUX_HTTP_BIND ?? '127.0.0.1'
+  if ((bind === '0.0.0.0' || bind === '::') && env.WORKMUX_HTTP_ALLOW_WILDCARD !== '1') {
+    throw new Error(
+      'refusing wildcard bind; set WORKMUX_HTTP_BIND to a loopback or VPN interface address, ' +
+        'or set WORKMUX_HTTP_ALLOW_WILDCARD=1 to opt in (then WORKMUX_ALLOWED_HOSTS MUST list every ' +
+        'IP/hostname you access it by, or all requests get 403 forbidden_host)',
+    )
+  }
+  return {
+    bind,
+    port,
+    tmuxSocket: env.WORKMUX_TMUX_SOCKET || null,
+    repos: (env.WORKMUX_REPOS ?? '')
+      .split(':')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((p) => (p === '~' ? os.homedir() : p.replace(/^~\//, `${os.homedir()}/`))),
+    allowedHosts: (env.WORKMUX_ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s !== '' && s !== '*'),
+    allowAnyHost: (env.WORKMUX_ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .includes('*'),
+    fixtureDir: env.WORKMUX_HTTP_FIXTURES || null,
+    staleAfterSecs: Number(env.WORKMUX_HTTP_STALE_AFTER ?? DEFAULT_STALE_AFTER_SECS),
+    maxOwnedTerminals: Number(env.WORKMUX_HTTP_MAX_OWNED_TERMINALS ?? DEFAULT_MAX_OWNED_TERMINALS),
+  }
+}
+
+export const BOUNDS = {
+  coreTtlMs: 2000,
+  gitTtlMs: 10000,
+  prTtlMs: 60000,
+  subprocessTimeoutMs: 15000,
+  createTimeoutMs: 300000,
+  mergeTimeoutMs: 120000,
+  maxSubprocessOutputBytes: 4 * 1024 * 1024,
+  maxWsMessageBytes: 256 * 1024,
+  maxOutputLines: 2000,
+  defaultOutputLines: 400,
+  maxDiffBytes: 1024 * 1024,
+  maxHunkCommentChars: 8000,
+  dedupTtlMs: 300000,
+  dedupMaxEntries: 1000,
+  confirmTokenTtlMs: 300000,
+}

@@ -1,0 +1,186 @@
+import { useRef, useState } from 'react'
+import type { AgentView, PreparedAction } from '@shared/types'
+import type { ConnectionState } from '../../hooks/useDashboard'
+import { api } from '../../lib/api'
+import { StatusBadge } from '../../components/StatusBadge'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { OutputPane } from './OutputPane'
+import { Composer } from './Composer'
+import { AgentSwitcher } from './AgentSwitcher'
+
+export interface AgentViewPanelProps {
+  agent: AgentView | null
+  agents: AgentView[]
+  recents: string[]
+  connection: ConnectionState
+  onSwitch: (id: string) => void
+  onPrevious: () => void
+  onOpenDiff: (id: string, label: string) => void
+  onOpenTerminal: (id: string) => void
+}
+
+/**
+ * Native agent detail: header switcher, polling output pane, composer.
+ * A null agent is an explicit empty state — never a substituted agent.
+ */
+export function AgentViewPanel({
+  agent,
+  agents,
+  recents,
+  connection,
+  onSwitch,
+  onPrevious,
+  onOpenDiff,
+  onOpenTerminal,
+}: AgentViewPanelProps) {
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const outputRef = useRef('')
+  const hasOther = recents.some((id) => id !== agent?.id)
+  const [stopPrepared, setStopPrepared] = useState<PreparedAction | null>(null)
+  const [stopBusy, setStopBusy] = useState(false)
+  const [stopNote, setStopNote] = useState<string | null>(null)
+
+  function askStop(): void {
+    if (!agent) return
+    setStopNote(null)
+    api
+      .prepare({ action: 'stop', targetId: agent.id })
+      .then(setStopPrepared)
+      .catch((err: unknown) => setStopNote(err instanceof Error ? err.message : 'could not prepare stop'))
+  }
+
+  function confirmStop(acceptWarnings: boolean): void {
+    if (!agent || !stopPrepared?.confirmToken) return
+    setStopBusy(true)
+    api
+      .execute({
+        action: 'stop',
+        targetId: agent.id,
+        acceptWarnings,
+        confirmToken: stopPrepared.confirmToken,
+        requestId: crypto.randomUUID(),
+      })
+      .then(async (op) => {
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 1000))
+          const fresh = await api.operation(op.id).catch(() => null)
+          if (fresh && fresh.state !== 'running') {
+            setStopNote(fresh.state === 'done' ? '✓ agent stopped' : fresh.error ?? `stop ${fresh.state}`)
+            return
+          }
+        }
+        setStopNote('stop still running; check again shortly')
+      })
+      .catch((err: unknown) => setStopNote(err instanceof Error ? err.message : 'stop failed'))
+      .finally(() => {
+        setStopBusy(false)
+        setStopPrepared(null)
+      })
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="safe-top shrink-0 border-b border-line bg-surface">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <button
+            onClick={() => setSwitcherOpen(true)}
+            aria-label="Switch agent"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-fg">
+                {agent ? `${agent.session}${agent.windowName ? `:${agent.windowName}` : ''}` : 'No agent selected'}
+              </span>
+              <span className="block truncate text-xs text-fg-muted">
+                {agent ? `${agent.project} / ${agent.name}` : 'tap to choose an agent'}
+              </span>
+            </span>
+            {agent && <StatusBadge status={agent.status} />}
+            <span aria-hidden className="shrink-0 text-fg-muted">
+              ▾
+            </span>
+          </button>
+          <button
+            onClick={onPrevious}
+            disabled={!hasOther}
+            aria-label="Previous agent"
+            className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-fg-muted"
+          >
+            ← Prev
+          </button>
+        </div>
+        {agent && (
+          <div className="flex items-center gap-1.5 px-3 pb-2">
+            <button
+              onClick={() => onOpenTerminal(agent.id)}
+              className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
+            >
+              ⌨ Terminal
+            </button>
+            <button
+              onClick={() => onOpenDiff(agent.worktreeId, `${agent.project}/${agent.git?.branch ?? agent.name}`)}
+              className="rounded-lg border border-line px-3 py-1 text-xs text-fg-muted"
+            >
+              Diff
+            </button>
+            <button
+              onClick={askStop}
+              disabled={stopBusy}
+              className="rounded-lg border border-err/40 px-3 py-1 text-xs text-err disabled:opacity-45"
+            >
+              {stopBusy ? 'Stopping…' : '⏹ Stop'}
+            </button>
+            {stopNote && (
+              <span className="truncate text-xs text-fg-muted" role="status">
+                {stopNote}
+              </span>
+            )}
+          </div>
+        )}
+      </header>
+
+      {agent ? (
+        <>
+          <OutputPane agent={agent} onOpenSwitcher={() => setSwitcherOpen(true)} outputRef={outputRef} />
+          <Composer agent={agent} connection={connection} outputRef={outputRef} />
+        </>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-sm font-medium text-fg">No agent selected</p>
+          <p className="max-w-xs text-xs text-fg-muted">
+            Pick an agent to watch its output and send it messages.
+          </p>
+          <button
+            onClick={() => setSwitcherOpen(true)}
+            className="rounded-lg bg-accent/15 px-4 py-2 text-sm font-medium text-accent"
+          >
+            Choose agent
+          </button>
+        </div>
+      )}
+
+      {stopPrepared && (
+        <ConfirmDialog
+          title="Stop agent"
+          targetLabel={stopPrepared.targetLabel}
+          warnings={stopPrepared.warnings}
+          blocked={stopPrepared.blocked}
+          confirmLabel="Stop agent"
+          busy={stopBusy}
+          onConfirm={confirmStop}
+          onCancel={() => setStopPrepared(null)}
+        />
+      )}
+
+      {switcherOpen && (
+        <AgentSwitcher
+          agents={agents}
+          recents={recents}
+          currentId={agent?.id ?? null}
+          onPick={onSwitch}
+          onClose={() => setSwitcherOpen(false)}
+        />
+      )}
+    </div>
+  )
+}

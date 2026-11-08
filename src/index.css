@@ -1,0 +1,95 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #0b0f14;
+  --color-surface: #131a22;
+  --color-surface-2: #1a232e;
+  --color-line: #263241;
+  --color-fg: #dce3ea;
+  --color-fg-muted: #8494a7;
+  --color-accent: #4cc2ff;
+  --color-ok: #3fb950;
+  --color-warn: #d29922;
+  --color-err: #f85149;
+  --color-working: #4cc2ff;
+  --color-waiting: #d29922;
+  --color-done: #3fb950;
+  --color-stale: #8494a7;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+/* Keep form text >=16px so Safari does not zoom on focus. */
+input,
+textarea,
+select {
+  font-size: max(16px, 0.95rem);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.dvh {
+  min-height: 100dvh;
+}
+
+.terminal-output {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.terminal-output.no-wrap {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.terminal-output ::selection {
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+button,
+[role='button'] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+button:disabled {
+  opacity: 0.45;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}

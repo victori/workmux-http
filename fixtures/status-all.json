@@ -1,0 +1,95 @@
+{
+  "context": {
+    "backend": "tmux",
+    "instance": "/private/tmp/tmux-501/default"
+  },
+  "scope": {
+    "repository": null,
+    "all": true,
+    "targets": []
+  },
+  "state_files_total": 5,
+  "state_files_invalid": 0,
+  "state_files_invalid_unattributed": 0,
+  "state_files_invalid_matching_context": 0,
+  "state_files_matching_context": 5,
+  "reconciled_agent_count": 5,
+  "agents": [
+    {
+      "worktree": "sample-app-alpha",
+      "branch": "main",
+      "project": "sample-app-alpha",
+      "project_path": "/home/dev/projects/sample-app-alpha",
+      "status": "done",
+      "elapsed_secs": 174796,
+      "title": "✳ Show times timezone handling",
+      "pane_id": "%286",
+      "workdir": "/home/dev/projects/sample-app-alpha",
+      "agent_kind": "claude",
+      "session": "shellfish-1",
+      "window_name": "alpha",
+      "updated_ts": 1793916060
+    },
+    {
+      "worktree": "feat-timezone",
+      "branch": "feat-timezone",
+      "project": "sample-app-alpha",
+      "project_path": "/home/dev/projects/sample-app-alpha",
+      "status": "working",
+      "elapsed_secs": 42,
+      "title": "✳ Implement DST conversion",
+      "pane_id": "%287",
+      "workdir": "/home/dev/projects/sample-app-alpha/.claude/worktrees/feat-timezone",
+      "agent_kind": "claude",
+      "session": "shellfish-1",
+      "window_name": "timezone",
+      "updated_ts": 1794002000
+    },
+    {
+      "worktree": "sample-app-beta",
+      "branch": "master",
+      "project": "sample-app-beta",
+      "project_path": "/home/dev/projects/sample-app-beta",
+      "status": "waiting",
+      "elapsed_secs": 120,
+      "title": "✳ Review jobs refactor",
+      "pane_id": "%255",
+      "workdir": "/home/dev/projects/sample-app-beta",
+      "agent_kind": "claude",
+      "session": "shellfish-1",
+      "window_name": "beta",
+      "updated_ts": 1794001000
+    },
+    {
+      "worktree": "sample-app-gamma",
+      "branch": "main",
+      "project": "sample-app-gamma",
+      "project_path": "/home/dev/projects/sample-app-gamma",
+      "status": "done",
+      "elapsed_secs": 80190,
+      "title": "✳ MFX delivery-methods endpoint",
+      "pane_id": "%310",
+      "workdir": "/home/dev/projects/sample-app-gamma",
+      "agent_kind": "codex",
+      "session": "shellfish-2",
+      "window_name": "gamma",
+      "updated_ts": 1794010666
+    },
+    {
+      "worktree": "sample-app-gamma",
+      "branch": "main",
+      "project": "sample-app-gamma",
+      "project_path": "/home/dev/projects/sample-app-gamma",
+      "status": "working",
+      "elapsed_secs": 5,
+      "title": null,
+      "pane_id": "%311",
+      "workdir": "/home/dev/projects/sample-app-gamma",
+      "agent_kind": "claude",
+      "session": "shellfish-2",
+      "window_name": "gamma",
+      "updated_ts": 1794090666
+    }
+  ],
+  "target_errors": []
+}

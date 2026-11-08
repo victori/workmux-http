@@ -1,0 +1,7 @@
+✻ Cookin' (1m 02s · thinking)
+
+❯ Review jobs refactor
+
+⏺ The refactor looks solid. One note: the retry policy duplicates backoff logic.
+
+✻ Waiting for input (esc to interrupt)

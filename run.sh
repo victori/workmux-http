@@ -1,0 +1,7 @@
+#!/bin/bash
+
+export WORKMUX_HTTP_BIND=0.0.0.0
+export WORKMUX_HTTP_ALLOW_WILDCARD=1
+export WORKMUX_ALLOWED_HOSTS=*
+export WORKMUX_HTTP_PORT=3000
+npm start

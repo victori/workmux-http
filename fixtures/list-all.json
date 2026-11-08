@@ -1,0 +1,67 @@
+[
+  {
+    "project": "sample-app-alpha",
+    "project_path": "/home/dev/projects/sample-app-alpha",
+    "handle": "sample-app-alpha",
+    "branch": "main",
+    "path": "/home/dev/projects/sample-app-alpha",
+    "is_main": true,
+    "mode": "window",
+    "has_uncommitted_changes": true,
+    "is_open": true,
+    "agent_statuses": ["done"],
+    "created_at": 1636740721
+  },
+  {
+    "project": "sample-app-alpha",
+    "project_path": "/home/dev/projects/sample-app-alpha",
+    "handle": "feat-timezone",
+    "branch": "feat-timezone",
+    "path": "/home/dev/projects/sample-app-alpha/.claude/worktrees/feat-timezone",
+    "is_main": false,
+    "mode": "window",
+    "has_uncommitted_changes": true,
+    "is_open": true,
+    "agent_statuses": ["working"],
+    "created_at": 1781564750
+  },
+  {
+    "project": "sample-app-beta",
+    "project_path": "/home/dev/projects/sample-app-beta",
+    "handle": "sample-app-beta",
+    "branch": "master",
+    "path": "/home/dev/projects/sample-app-beta",
+    "is_main": true,
+    "mode": "window",
+    "has_uncommitted_changes": false,
+    "is_open": true,
+    "agent_statuses": ["waiting"],
+    "created_at": 1640000000
+  },
+  {
+    "project": "sample-app-beta",
+    "project_path": "/home/dev/projects/sample-app-beta",
+    "handle": "fix-jobs",
+    "branch": "fix-jobs",
+    "path": "/home/dev/projects/sample-app-beta/.claude/worktrees/fix-jobs",
+    "is_main": false,
+    "mode": "window",
+    "has_uncommitted_changes": true,
+    "is_open": false,
+    "agent_statuses": [],
+    "created_at": 1781600000
+  },
+  {
+    "project": "sample-app-gamma",
+    "project_path": "/home/dev/projects/sample-app-gamma",
+    "handle": "sample-app-gamma",
+    "branch": "main",
+    "path": "/home/dev/projects/sample-app-gamma",
+    "is_main": true,
+    "mode": "window",
+    "has_uncommitted_changes": false,
+    "is_open": true,
+    "agent_statuses": ["done"],
+    "created_at": 1650000000
+  }
+]

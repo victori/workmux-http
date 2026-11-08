@@ -1,0 +1,16 @@
+✻ Workin' on DST conversion (32s · 1.2k tokens)
+  ⎿  Reading src/time/zones.ts
+
+✻ Thinking… (4s)
+  The conversion needs to handle both named zones and fixed offsets.
+
+❯ Implement DST-safe conversion helpers
+
+⏺ I'll add zone conversion with explicit DST handling.
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Write(src/time/convert.ts)
+  ⎿  Wrote 42 lines
+
+✻ Waiting (esc to interrupt)

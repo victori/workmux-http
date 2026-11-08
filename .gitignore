@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local env / secrets
+.env
+.env.*
+
+# logs
+*.log
+npm-debug.log*
+
+# test artifacts
+test-results/
+playwright-report/
+coverage/
+
+# backups (untracked-file safety copies)
+*.bak
+
+# orchestration state
+.superpowers/
+
+# OS noise
+.DS_Store

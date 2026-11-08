@@ -1,0 +1,268 @@
+# Workmux HTTP Dashboard Implementation Plan
+
+> For agentic workers: Use `superpowers:executing-plans` to implement this plan task by task. Do not implement until the user requests implementation.
+
+**Goal:** Build an iPhone-first native React dashboard that discovers and operates existing workmux sessions, with iPad support as the secondary layout target.
+
+**Architecture:** A Node.js backend on the same Mac reads workmux/tmux metadata, captures existing agent output, sends literal messages and explicit keys, and performs workmux management actions. Responsive React/HTML is the primary interface; xterm.js is supplementary for an optional advanced terminal. A local HTTP port serves the frontend, API, and WebSocket connection from one origin within the user's secure VPN environment.
+
+**Tech stack:** React, TypeScript, Vite, Tailwind CSS, Fastify, WebSockets, node-pty, xterm.js, Vitest, React Testing Library, and Playwright.
+
+**Specification:** This document consolidates the original design and the grill-me interview decisions. Earlier terminal-first interaction, dashboard scope exclusions, application login, and mandatory HTTPS are superseded. This is a planning artifact, not an implementation report.
+
+## Requirements and constraints
+
+- Use a Vite-scaffolded React TypeScript application and Tailwind CSS.
+- Recreate the dashboard as native React views rather than embedding the workmux TUI.
+- Connect to existing workmux/tmux sessions and their running processes. Never launch replacement agents as part of attachment.
+- Optimize touch interaction and software-keyboard behavior for iPhone Safari first; iPad Safari second.
+- Show only workmux-managed sessions and their agents; no unmanaged tmux view.
+- Keep navigation independent between browser tabs and desktop tmux. Selection in the web UI must not select or resize desktop panes/windows.
+- Allow fast session switching, native agent output viewing, a multiline message composer, and explicit special-key controls.
+- Allow simultaneous browser and desktop input without exclusive control. Do not restrict sending to agents marked waiting.
+- Run as the same OS user as workmux, with access to its tmux socket.
+- Initial scope is one host, one configured tmux socket, and one authorized user, with multiple browser tabs supported.
+- No implementation-time commits, pushes, or branch creation. Future user-triggered product worktree creation and commit-instruction actions are separate from this restriction on coding-agent work. Back up existing untracked files with timestamped `.bak` files before modifying them.
+- Before implementation, inspect applicable AGENTS.md instructions. After meaningful changes, run focused verification and review the diff for regressions.
+
+## Scope
+
+Target functionality parity with the installed workmux TUI dashboard using native touch-friendly React controls: Agents/Worktrees tabs, status, search, all sorts and filters, quick/previous-agent navigation, output previews, agent input, PR links, WIP/review diffs, hunk staging/skipping/splitting/undo, hunk comments, commit instructions, merge, command palette, and context-menu actions.
+
+Include native worktree/agent creation using known projects and their existing workmux configurations, profiles, and layouts. The form takes project, branch/worktree name, optional initial prompt, and optional existing agent profile; otherwise use project defaults. Do not introduce a separate web configuration system.
+
+Confirm merges, worktree removal, and stopping agents with the exact project/target shown. Preserve workmux's dirty-worktree and merge-conflict checks; never silently force an operation. Navigation, messages, and hunk staging remain immediate. The commit action sends the TUI-equivalent instruction to the agent rather than implicitly committing in the backend.
+
+An advanced terminal is optional for full terminal interaction; routine dashboard functionality must not depend on it. Separate workmux configuration editing, unmanaged tmux management, and multi-host orchestration are out of scope. Do not execute commands automatically on attachment.
+
+## Integration facts and verification gate
+
+The workspace was empty when planning began. Locally installed workmux is version 0.1.280 and tmux is installed. The installed workmux README documents:
+
+- `workmux list --all --json`: worktrees with project, project_path, handle, branch, path, is_main, mode, has_uncommitted_changes, is_open, agent_statuses, and created_at.
+- `workmux status --all --json`: scoped observations and tracked agents; `--git` adds Git information.
+- The TUI has Agents and Worktrees tabs, priority/project/recency/natural sorting, session/name/stale filters, output preview, input mode, and WIP/branch diffs.
+- Repositories without tracked agents are not necessarily discoverable through `--all`.
+
+These are documented capabilities, not verified runtime payloads. A workmux help invocation failed because its log file could not be opened under the sandbox. Resolve that execution-environment restriction before claiming live integration works; do not silently substitute mock results.
+
+- [ ] Capture real JSON fixtures and validate exit codes and field shapes before writing adapters.
+- [ ] Confirm stable mapping between agent records, repositories, worktrees, and tmux panes, including window and session modes.
+- [ ] Verify discovery against an explicitly configured tmux socket and configured repository paths.
+- [ ] Inventory all installed TUI actions, including Worktrees context menus and command palette. Inspect version-matched upstream source where documentation is incomplete. Record each native equivalent, target resolution, backend operation, and test; never silently omit an action while claiming parity.
+- [ ] Verify non-selecting pane capture, literal message submission, and explicit key delivery in disposable sessions. Native browsing and input must not change desktop selection or dimensions.
+- [ ] Verify optional advanced-terminal isolation separately. Grouped sessions share pane state and sizes, so they are only a candidate strategy. If the candidate violates independent navigation, revise it before implementing dependent functionality.
+
+## User experience
+
+### iPhone
+
+Use bottom navigation for Dashboard, Sessions, and Agent, with safe-area padding. Agent is a native interaction view, not an embedded terminal. Use a dark theme, readable text, status labels as well as color, and touch targets of at least 44 by 44 CSS pixels. Avoid hover-only actions.
+
+Dashboard uses compact cards and Agents/Worktrees segmented tabs. Agent cards prioritize name, project, status, and elapsed time. Details expose Git data and title when available; absent metadata is shown as unavailable rather than inferred. Worktree cards show branch, path, dirty/open state, and associated agents.
+
+Default agent sort is waiting, done, working, then stale. Also offer project, recency, and tmux order. Search project/worktree names case-insensitively. Provide selected-session/all-session and hide-stale filters. Put secondary filters and sorting in a bottom sheet. Preserve filter/sort preferences in browser storage.
+
+Tapping a card opens native output and agent interaction. Capture output without attaching, selecting, or resizing a terminal. Render escaped HTML with preserved whitespace, safe text colors, wrapping toggle, and horizontal scrolling. This is terminal output, not a fabricated chat transcript. Replace bounded screen/history snapshots rather than appending repeated redraws as messages. Follow output only when the reader is at the bottom and provide Jump to latest. Preserve selection during refreshes; explain when the target disappears.
+
+The Agent header shows the active managed session and agent. Tapping it opens a searchable switcher with recent sessions first. Provide a Previous button and remember the selected agent per session. Selection/history are tab-local; general filters may persist across tabs. Do not use swipe-to-switch gestures. All-session filtering means all workmux-managed sessions only.
+
+Provide a multiline composer with explicit Send, and a toolbar for Enter, Esc, Tab, Ctrl, arrows, and Ctrl+C. Ctrl is a visible, cancelable one-shot modifier. Send complete messages literally as one application submission and special keys only when explicitly tapped. Preserve per-target drafts in tab memory across navigation/reconnect, but never automatically submit them. Freeze target identity at submission so a rapid switch cannot redirect an in-flight message. Provide native text selection and copy/paste fallbacks that work on HTTP without secure-context Clipboard APIs.
+
+Use dynamic viewport units and Visual Viewport events to keep the composer and controls above the software keyboard. Recalculate layout on keyboard, viewport, and orientation changes without resizing the underlying agent terminal. Keep form text large enough to avoid Safari focus zoom. Offer Advanced terminal separately, with an explicit Fit terminal action disclosing shared-layout effects.
+
+### iPad and hardware keyboards
+
+Use a session rail and detail area in portrait when space permits. Landscape supports a persistent sidebar and simultaneous dashboard list plus selected native agent output or diff. Retain touch controls with hardware keyboards attached.
+
+Outside editable fields and advanced terminal focus, support `/` for search, j/k for row navigation, Enter for opening the selected agent, 1–9 for quick selection, Alt+Left for previous session, and Escape for dismissing details/overlays. Never intercept composer or terminal input with dashboard shortcuts.
+
+### Connection lifecycle
+
+Show loading, empty, disconnected, stale-data, dependency-error, and target-ended states explicitly. Safari suspension is expected: refresh and reconnect on foregrounding or network recovery. Disable sending while disconnected. Never queue or replay input or management actions after a disconnect. Distinguish unknown delivery from failed delivery; do not automatically retry ambiguous submissions.
+
+Persist UI preferences and target identity only, not output or messages. Keep drafts in tab memory. Selecting an ended target offers the switcher rather than opening a substitute. Closing a browser tab or stopping the HTTP service must leave original sessions running, except for explicit confirmed stop/remove operations.
+
+## Backend and interfaces
+
+Organize frontend features under `src/features/`, backend adapters/services under `server/`, and normalized contracts under `shared/`. Separate discovery, input delivery, Git/workmux management, request validation, and optional terminal lifecycle. Validate external JSON at adapter boundaries.
+
+| Interface | Behavior |
+| --- | --- |
+| `GET /api/health` | Readiness and dependency diagnostics. |
+| `GET /api/dashboard` | Managed sessions, agents, worktrees, available actions, observation time, and source errors. |
+| `GET /api/projects` | Known projects and existing selectable profiles/defaults. |
+| `GET /api/agents/:id/output` | Bounded output from the resolved existing agent pane. |
+| `POST /api/agents/:id/messages` | Literal complete message with request identity. |
+| `POST /api/agents/:id/keys` | Allowlisted explicit key event. |
+| `GET /api/worktrees/:id/diff?mode=wip\|branch` | File changes, bounded diff content, and snapshot identity. |
+| `POST /api/worktrees/:id/hunks/:action` | Validated stage/split/undo; skip and navigation stay client-side. |
+| `POST /api/worktrees` | Create with known project, name, initial prompt, and existing profile. |
+| `POST /api/actions/prepare` and `/execute` | Exact-target management actions and required confirmation. |
+| `GET /api/operations/:id` | Progress/result of submitted long-running actions. |
+| `WS /api/terminal` | Optional advanced attachment, output, explicit input/resize, and detach. |
+
+Use opaque server-issued worktree identifiers and stable tmux IDs, scoped to the configured server. Resolve paths and targets server-side; do not accept arbitrary command names, executable paths, or repository paths from API requests. Execute commands with argument arrays rather than shell interpolation. Bound subprocess time, output size, terminal message size, and preview/diff size; mark truncation explicitly.
+
+Revalidate managed agent/pane identity before input. Do not redirect a stale target to a replacement process; an agent marked working is not inherently unavailable. Serialize web submissions per pane so browser paste/submit sequences do not interleave. Desktop input remains concurrent, without an exclusive-control guarantee. Deduplicate mutations by request identity during the service lifetime; after restart or an ambiguous connection failure, report unknown delivery rather than promising exactly-once execution or retrying automatically.
+
+Bind destructive confirmations to the exact action and target, then revalidate before execution. Serialize conflicting web worktree/Git actions and detect changes from agents or desktop clients. Do not cancel a running merge/create operation solely because the initiating browser disconnects; expose its operation result.
+
+Read workmux JSON plus structured tmux discovery, not undocumented state files. Allow configured repository paths to supplement tracked-project discovery. Distinguish absent tmux sessions from command failure. Preserve successful cached data with an error/stale marker when a source fails.
+
+Resolve existing project defaults and selectable agent profiles rather than creating new configuration. Enforce managed-only targets at the API boundary, including input and optional terminal endpoints, not just in the visible list.
+
+Poll core data every two seconds while there are visible clients, with no overlapping refresh jobs. Refresh Git metadata every ten seconds or on demand. Share cached snapshots across clients. Pause browser polling while hidden and request a fresh snapshot on return.
+
+For WIP diffs, include staged and unstaged tracked changes against HEAD and list untracked files separately. Handle unborn repositories explicitly. For branch diffs, resolve the workmux-configured base branch when available; otherwise report that a base must be configured rather than assuming `main`. Render binary changes as metadata and diff text as escaped content.
+
+Match TUI staging/splitting/undo behavior using validated diff and index snapshots. Reject stale hunks and reload; never undo unrelated staging performed by another client or the agent. Send hunk comments with file, line, hunk context, and user comment. Do not accept arbitrary client-supplied patch text for management operations.
+
+## Optional advanced terminal ownership and sizing
+
+Native output/input uses non-selecting capture and targeted delivery without PTY attachment. Only the explicit Advanced terminal view may attach a PTY-backed client to the existing target. Never recreate shells or agents.
+
+A dedicated grouped session is a candidate attachment strategy, subject to the verification gate. Closing/disconnecting cleans up owned PTY/client/attachment resources only, never original sessions/windows/panes/processes. Use explicit ownership markers and unique instance identity, not a prefix alone. Exclude attachment resources from discovery and bound their lifetime/count.
+
+Independent browser and desktop navigation is required. Grouped sessions isolate selected-window state but still share pane state and sizing; do not treat grouping as proof of isolation. If necessary, revise the advanced-view strategy after disposable testing rather than weakening the requirement.
+
+Preserve existing dimensions by default. Permit resizing only through an explicit Fit terminal action with its shared-layout effect explained; throttle and validate resize events. Do not modify global tmux sizing policy. Reattach without replaying input.
+
+## VPN access
+
+Run on the same Mac/user as workmux. Default port is 3000 and bind address is `127.0.0.1` for VPN forwarding; direct VPN access requires an explicitly configured VPN interface address. Do not default to `0.0.0.0` or modify VPN settings. Serve frontend/API/WebSocket from one origin.
+
+The VPN/host network is the access boundary. No application password, login screen, or authentication cookie is required. HTTP is supported; HTTPS is optional. Validate configured Host and Origin for API requests and WebSocket upgrades. Require same-origin JSON/custom-header mutations, reject cross-origin requests/permissive CORS, and never mutate through GET. Do not log agent input or output by default. Core iOS behavior must work without secure-context-only features such as Clipboard APIs or service workers.
+
+## Implementation tasks
+
+### Task 1: Establish contracts and scaffold
+
+- [ ] Complete the integration verification gate, installed-version TUI action inventory, and sanitized fixtures.
+- [ ] Scaffold with Vite's React TypeScript template and Tailwind's Vite integration.
+- [ ] Set up Fastify, shared contracts, and same-origin development proxying.
+- [ ] Provide `dev`, `build`, `start`, `typecheck`, `test`, and `test:e2e` scripts. Production serves the Vite build and API together.
+- [ ] Add focused adapter tests for valid payloads, failed commands, malformed JSON, empty observations, duplicate names, unmanaged sessions, and stable managed-target identity.
+- [ ] Verify type checking and production build.
+
+### Task 2: Discovery and mobile dashboard
+
+- [ ] Implement workmux/tmux adapters, stable identity mapping, explicit repository configuration, and cached snapshots.
+- [ ] Implement iPhone native navigation, managed-session/agent browser, all TUI filters/sorts, and tab-local recent selections.
+- [ ] Add bounded native output and status/error states; verify preview/selection never resizes or selects desktop panes/windows.
+- [ ] Test selection retention, disappearing targets, search, priority order, and failed-refresh stale data.
+- [ ] Verify no polling overlap and refresh on visibility restoration.
+
+### Task 3: Native agent interaction and VPN request controls
+
+- [ ] Implement configurable loopback/VPN binding, Host/Origin checks, cross-site mutation protection, and managed-only API target validation without application login.
+- [ ] Implement literal-message and explicit-key endpoints with target revalidation, request deduplication, and per-pane web serialization.
+- [ ] Build native composer, per-target drafts, key toolbar, HTTP-compatible copy/paste, and unknown-delivery/disconnected states.
+- [ ] Test working/waiting agents, multiline/special-character messages, duplicate taps, rapid switching, simultaneous browser/desktop input, dropped connections, and dead/reused targets.
+- [ ] Verify native interaction targets the existing agent without new sessions, agent restarts, desktop selection changes, or terminal resizing.
+
+### Task 4: Full dashboard management and diffs
+
+- [ ] Implement native creation using known projects and existing defaults/profiles, including initial prompt and operation progress/results.
+- [ ] Implement all verified TUI actions, context menus, palette, PR links, and explicit commit-instruction action.
+- [ ] Add WIP/branch diffs, hunk staging/skipping/splitting/undo, hunk comments, file navigation, and bounded large-output handling.
+- [ ] Add exact-target confirmation for merge/remove/stop actions, preserving workmux protections without implicit force.
+- [ ] Test only in disposable repositories: clean/dirty/unborn state, missing bases, external index edits, stale hunks, conflicts, canceled confirmations, and disconnect during operations.
+
+### Task 5: Optional terminal, iPad, and Safari lifecycle
+
+- [ ] Validate the advanced-terminal strategy preserves independent navigation before implementing xterm.js/PTY attachment and owned-resource cleanup.
+- [ ] Add advanced view with existing dimensions by default and explicit Fit terminal action; never modify global tmux options.
+- [ ] Implement iPad split views, focus-aware hardware-keyboard controls, native viewport/keyboard handling, and foreground refresh/reconnect.
+- [ ] Verify original processes survive browsing, switching, tab closure, network interruption, and HTTP-service restart; no automatic input replay.
+
+### Task 6: End-to-end verification and handoff
+
+- [ ] Run focused unit/component tests, tmux integration checks, Playwright workflows, type checking, and production build.
+- [ ] Test real iPhone Safari on HTTP over the intended VPN with the software keyboard open, rotation, background/foreground, copy/paste, scroll, and network changes.
+- [ ] Test real iPad Safari in portrait/landscape and with a hardware keyboard. Desktop WebKit emulation supplements but does not replace device checks.
+- [ ] Verify Host/Origin rejection, cross-site mutation rejection, managed-only target enforcement, request bounds, and absence of sensitive logging.
+- [ ] Compare delivered native actions with the installed TUI inventory and explicitly report any parity gap.
+- [ ] Document startup, dependency versions, repository/socket configuration, bind/port/origin configuration, VPN access expectations, existing config reuse, and advanced-terminal limits.
+- [ ] Review for lifecycle leaks, unsafe command arguments, cross-target input, stale patches, incorrect destructive-action targets, and original-session cleanup. Fix actionable issues and rerun focused verification.
+- [ ] Report any device or live-integration checks that could not be performed with the specific reason. Do not claim those checks passed.
+
+## Acceptance criteria
+
+- Only managed workmux sessions appear, with native equivalents for the installed TUI action inventory and the agreed creation form.
+- Native composer/key input reaches the chosen existing agent, including while working, with concurrent desktop/browser use supported.
+- Session switching is accessible from the Agent header, with a dedicated previous-target action and tab-local navigation.
+- Closing/switching/disconnecting does not kill original sessions; reconnect never automatically replays input or destructive actions and reports uncertain delivery.
+- Native navigation/input changes neither desktop selection nor dimensions. The optional advanced strategy preserves independent navigation and discloses explicit resizing effects.
+- Creation respects existing profiles/layouts; merge/remove/stop confirmations show exact targets and preserve workmux checks.
+- iPhone controls remain usable above the software keyboard, with no hover dependence or obscured primary actions.
+- iPad uses additional space while retaining touch usability.
+- The same-Mac service operates over the VPN on a configurable local port without application login or mandatory HTTPS; Host/Origin and cross-site mutation checks are verified.
+- Source failures and missing targets produce explicit states rather than fabricated empty success.
+- Verification and second-pass review are completed, with any environmental limitations recorded.
+
+## Handoff
+
+This file authorizes no implementation, deployment, Git initialization, commits, or pushes. Begin implementation only when the user requests it. Product decisions from the grill-me interview are settled. Remaining technical evidence includes runtime JSON schemas, undocumented TUI actions, safe non-selecting input mechanics, and optional advanced-terminal isolation. Resolve those through version-matched inspection and disposable integration tests; if evidence contradicts an agreed requirement, report the specific conflict and revise the affected strategy first.
+
+## Amendments (post-plan, implementation + review, 2026-11-07)
+
+Criteria added or tightened after the plan was written. Defaults and the
+original requirements above remain in force unless noted.
+
+### Exposure (extends "Deployment and VPN"; default unchanged)
+- `WORKMUX_HTTP_ALLOW_WILDCARD=1` opts in to `0.0.0.0`/`::` binds. Without
+  it, wildcard bind still throws at startup ("Do not default to 0.0.0.0"
+  preserved).
+- `WORKMUX_ALLOWED_HOSTS=*` (`cfg.allowAnyHost`) accepts any Host header.
+  Startup prints a stderr warning; missing `Host` remains rejected.
+  Documented DNS-rebinding caveat: with no login, any reachable malicious
+  page can rebind and appear same-origin — trusted networks only.
+
+### Security hardening (from second-pass security review)
+- Confirm tokens are single-use: consumed synchronously at `execute` entry;
+  concurrent executes of one token pass exactly once. Tokens are random;
+  internal revalidation (`evaluateAction`) never re-issues a token.
+- Same-origin check compares host **and port** (closes WS-upgrade CSRF from
+  other local pages).
+- Request dedup keyed `paneId\0requestId` with in-flight promise sharing; a
+  reused requestId can never suppress delivery to a different pane.
+- `SAFE_REV` gates repo-controlled revisions (`.workmux.yaml base_branch`,
+  create `baseBranch`) against argv option injection.
+- Owned terminal sessions: ownership mark verified at creation (kill + throw
+  on failure); mid-attach failure kills the owned session; startup sweeps
+  orphaned `wmhttp-adv-*`; buffer deleted on paste failure.
+- Operations registry evicts finished operations past 100.
+- Hunk comments resolve the agent explicitly (`agentId`) or by sole agent;
+  otherwise 409 `ambiguous_agent` / 404; errors map to 404/409, never 500.
+
+### Upstream-evidence deviations (verified against workmux 0.1.280)
+- Delivery uses raw tmux (`load-buffer` + `paste-buffer -p -d` + Enter), not
+  `workmux send` — upstream refuses waiting agents (exit 3). workmux is used
+  for lifecycle only (add/merge/remove/close/open).
+- Git facts computed per repository; `workmux status --all --git` aborts the
+  whole payload when any workdir is not a git repo. `git: null` means
+  unavailable, never clean; a non-repo workdir is not a source failure.
+- Null `project` in status payloads falls back to the workdir basename
+  (workmux's own rule).
+
+### UI / service completeness
+- Stop-agent action surfaced in the agent header (⏹ → exact-target confirm →
+  operation poll); review found the server-side action had no UI wiring.
+- SPA fallback always registered; `index.html` candidates re-resolved per
+  request; 503 "Frontend not built yet" when unbuilt; actionable
+  `EADDRINUSE` message; Vite dev proxy follows `WORKMUX_HTTP_PORT`
+  (`dev` and `start` both default to :3000).
+- iOS text inputs render 16px on phones (`text-base md:text-sm`) to prevent
+  focus zoom; 44px minimum tap targets enforced globally.
+- Split-piece validation (`pieceMatches`) uses multiset line containment.
+
+### Verification delta
+- Vitest baseline is now 104 (adds token single-use/concurrency, pane-scoped
+  and concurrent dedup, wildcard bind/any-host, stop-flow UI, null-project
+  fallback); Playwright remains 11. Live smokes additionally prove parent
+  current-window isolation across WS attach and the bind/allowlist matrix
+  (0.0.0.0 refused by default; `*` opens all Hosts with warning).
+- Still outstanding from the original acceptance list: physical
+  iPhone/iPad Safari checks (headless iPhone 13 viewport only) — all other
+  acceptance criteria exercised; see README "Verification" and "Limits".
