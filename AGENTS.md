@@ -125,6 +125,10 @@ it the default in code or docs.
   tap targets (global CSS), text inputs `text-base md:text-sm` (iOS zoom
   guard), `max-h-[85dvh]` sheets, `md:` breakpoint = iPad layout.
 - Pane ids in URLs: `encodeURIComponent` (`%286` → `%25286` on the wire).
+- Layout: app root `.dvh` is `height:100dvh` (definite — `h-full` chains
+  depend on it). Any flex-column child that must scroll internally needs
+  `min-h-0` + `overflow-auto`; without `min-h-0` it grows to content and
+  the body scrolls instead (breaks follow-bottom/scroll logic silently).
 - Data freshness = `deriveConnection(snapshot, error, lastOkAt)` (source
   health + polling) — NEVER `snapshot.stale` (that includes idle agents;
   those render as per-agent Stale badges only).

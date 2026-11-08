@@ -64,9 +64,10 @@ protection).
 - **Dashboard** — every managed agent (status, elapsed, branch, dirty state) and
   every worktree (branch, uncommitted, PR link), searchable, filterable,
   sortable; preferences persist per tab.
-- **Agent view** — live scrollback capture (2 s poll), follow-bottom with
-  jump-latest, composer with per-agent drafts, one-shot Ctrl chord + key
-  toolbar, literal send via atomic tmux paste buffer.
+- **Agent view** — live scrollback capture (2 s poll) opening at the tail
+  (latest output), follow-bottom with jump-latest, composer with per-agent
+  drafts, one-shot Ctrl chord + key toolbar, literal send via atomic tmux
+  paste buffer.
 - **Diff view** — WIP (uncommitted) and Review (vs resolved base) unified diffs,
   per-hunk stage / unstage / split / undo, hunk comments, commit (sends a
   literal `commit` to the owning agent), merge behind exact-target confirm.

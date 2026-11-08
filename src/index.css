@@ -48,7 +48,7 @@ select {
 }
 
 .dvh {
-  min-height: 100dvh;
+  height: 100dvh;
 }
 
 .terminal-output {

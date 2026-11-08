@@ -14,3 +14,36 @@
   ⎿  Wrote 42 lines
 
 ✻ Waiting (esc to interrupt)
+
+⏺ Test run: 12 passed, 0 failed
+
+⏺ Running typecheck…
+
+⏺ tsc clean
+
+  Searched for callers of convertZone (ctrl+o to expand)
+
+⏺ Found 3 call sites; updating src/api/handlers.ts
+
+⏺ Write(src/api/handlers.ts)
+  ⎿  Wrote 18 lines
+
+⏺ Write(src/time/zones.ts)
+  ⎿  Wrote 27 lines
+
+✻ Thinking… (7s)
+  Edge case: ambiguous local times during fall-back need an explicit
+  disambiguation strategy.
+
+⏺ Adding fold/unfold helpers with explicit offsets
+
+⏺ Write(src/time/fold.ts)
+  ⎿  Wrote 31 lines
+
+⏺ Test run: 18 passed, 0 failed
+
+⏺ Committing on feat/timezone…
+
+⏺ Commit 7f3ac91 created (3 files, +78)
+
+✻ Waiting (esc to interrupt)

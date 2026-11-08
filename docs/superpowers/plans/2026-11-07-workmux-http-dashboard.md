@@ -278,3 +278,18 @@ original requirements above remain in force unless noted.
 - Verification: +6 unit tests (`deriveConnection`, incl. idle-stale →
   online regression) = 110; e2e fixture-mode spec asserts the banner is
   absent despite frozen fixture timestamps.
+
+### Agent view opens at the tail (2026-11-07, user report)
+- Entering an agent view landed at the top of the scrollback. Two layout
+  defects made the pane non-scrollable, so the existing follow-bottom
+  effect (`scrollTop = scrollHeight`) was a no-op and the body scrolled
+  instead: `.dvh` used `min-height:100dvh` (indefinite height, defeating
+  `h-full` up the chain) and the output box lacked `min-h-0` (flex child
+  grew to content height).
+- Fix: `.dvh { height: 100dvh }` and `min-h-0` on the output box; the
+  pane now scrolls internally, opens at the tail, and follow-break /
+  Jump-to-latest work as specified.
+- Verification: fixture `output-%287.txt` extended past pane height;
+  e2e asserts the pane itself scrolls (`scrollHeight > clientHeight`)
+  and rests within 40px of the bottom after open. 11/11 e2e, 110/110
+  unit, typecheck + build clean.

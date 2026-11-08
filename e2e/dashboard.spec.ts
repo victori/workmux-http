@@ -32,6 +32,12 @@ test.describe('managed dashboard (fixture mode)', () => {
     await page.goto('/')
     await page.getByText('feat-timezone').first().click()
     await expect(page.getByText('DST conversion').first()).toBeVisible()
+    // The pane itself must scroll and land at the tail (latest output).
+    const box = page.locator('.terminal-output')
+    expect(await box.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+    await expect
+      .poll(() => box.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+      .toBeLessThanOrEqual(40)
 
     const composer = page.getByPlaceholder(/message|prompt|type/i)
     await composer.fill('hello from e2e')

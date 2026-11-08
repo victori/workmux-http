@@ -135,7 +135,7 @@ export function OutputPane({
       <div
         ref={boxRef}
         onScroll={onScroll}
-        className={`terminal-output flex-1 overflow-auto p-3 ${wrap ? '' : 'no-wrap'}`}
+        className={`terminal-output flex-1 min-h-0 overflow-auto p-3 ${wrap ? '' : 'no-wrap'}`}
       >
         <div dangerouslySetInnerHTML={{ __html: html }} />
       </div>
