@@ -42,6 +42,25 @@ describe('Workmux adapter', () => {
     expect(agent).toHaveProperty('updated_ts')
   })
 
+  test('should accept null elapsed_secs from live payloads', async () => {
+    const body = JSON.stringify({
+      context: { backend: 'tmux', instance: '/tmp/x' },
+      scope: null,
+      agents: [
+        {
+          worktree: 'dto', branch: 'DCG-1', project: 'p', project_path: '/p',
+          status: '-', elapsed_secs: null, title: 't', pane_id: '%312',
+          workdir: '/p/w', agent_kind: 'claude', session: 's', window_name: 'w',
+          updated_ts: 123,
+        },
+      ],
+      target_errors: [],
+    })
+    const wm = new Workmux(fakeWorkmux(`printf '%s' '${body}'`))
+    const status = await wm.statusAll()
+    expect(status.agents[0]!.elapsed_secs).toBeNull()
+  })
+
   test('should throw DependencyError on failed command', async () => {
     const wm = new Workmux(fakeWorkmux('echo "boom" >&2; exit 2'))
     await expect(wm.listAll()).rejects.toThrow(DependencyError)

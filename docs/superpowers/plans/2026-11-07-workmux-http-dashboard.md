@@ -293,3 +293,14 @@ original requirements above remain in force unless noted.
   e2e asserts the pane itself scrolls (`scrollHeight > clientHeight`)
   and rests within 40px of the bottom after open. 11/11 e2e, 110/110
   unit, typecheck + build clean.
+
+### Live null elapsed_secs tolerance (2026-11-07, live incident)
+- `workmux status --all --json` emitted `"elapsed_secs": null` for an agent
+  with unknown timing (status `-`); the zod schema required a number, so the
+  entire status source died with "unexpected payload shape".
+- `elapsed_secs` is now `z.number().nullable()`; discovery maps null to 0
+  (unknown timing = not stale-by-elapsed). Other nullish fields were already
+  tolerated.
+- Verification: new adapter test (`null elapsed_secs` parses) = 111 vitest;
+  live proof against workmux 0.1.280 with the offending agent present
+  (8 agents parsed, 1 null-elapsed).

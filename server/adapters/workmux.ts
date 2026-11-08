@@ -24,7 +24,9 @@ const AgentRecordSchema = z.object({
   project: z.string().nullable(),
   project_path: z.string().nullable(),
   status: z.string(),
-  elapsed_secs: z.number(),
+  // Live payloads carry null elapsed_secs when timing cannot be computed
+  // (e.g. freshly tracked or clock-less state); treat as 0 downstream.
+  elapsed_secs: z.number().nullable(),
   title: z.string().nullish(),
   pane_id: z.string().startsWith('%'),
   workdir: z.string(),

@@ -172,7 +172,7 @@ export class Discovery {
       const projectPath = a.project_path ?? a.workdir
       const raw: AgentStatus = a.status in KNOWN_STATUSES ? (a.status as AgentStatus) : 'stale'
       const status: AgentStatus =
-        raw === 'stale' || a.elapsed_secs > this.cfg.staleAfterSecs ? 'stale' : raw
+        raw === 'stale' || (a.elapsed_secs ?? 0) > this.cfg.staleAfterSecs ? 'stale' : raw
       const gitInfo = await this.gitInfoFor(a.workdir)
       if (gitInfo === undefined) gitDegraded = true
       agentViews.push({
@@ -182,7 +182,7 @@ export class Discovery {
         projectPath,
         worktreeId: worktreeId(project, a.workdir),
         status,
-        elapsedSecs: a.elapsed_secs,
+        elapsedSecs: a.elapsed_secs ?? 0,
         title: a.title ?? null,
         agentKind: a.agent_kind ?? null,
         session: a.session,
