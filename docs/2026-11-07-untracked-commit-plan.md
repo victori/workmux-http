@@ -95,7 +95,7 @@ ambiguous_agent · 202 for commit.
   - `commitCmdFor(kind: string | null): string | null` (env lookup +
     normalization).
   - `BOUNDS`: `maxCommitMessageBytes = 4096`, `maxAddPaths = 200`.
-  - `WORKMUX_COMMIT_TIMEOUT_MS` (default 120000) passed to the commit exec.
+  - `WORKMUX_COMMIT_TIMEOUT_MS` (default 300000) passed to the commit exec.
 - `server/commitCmd.ts` (new): tokenizer + `$@` substitution → `string[]`;
   rejects empty argv; unit-tested standalone (no fs, pure function).
 - `server/adapters/git.ts`

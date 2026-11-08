@@ -28,7 +28,7 @@ export interface AppConfig {
 
 const DEFAULT_STALE_AFTER_SECS = 3600
 const DEFAULT_MAX_OWNED_TERMINALS = 4
-const DEFAULT_COMMIT_TIMEOUT_MS = 120000
+const DEFAULT_COMMIT_TIMEOUT_MS = 300000
 
 /** Interchangeable agent-kind spellings (workmux reports opencode as `omp`). */
 const KIND_ALIASES: Record<string, string[]> = {

@@ -414,3 +414,6 @@ original requirements above remain in force unless noted.
 - Follow-up 3 (user): commit message made optional end-to-end (empty =
   command runs without message arg; `$@` token dropped). +2 tests =
   190 vitest, 22 e2e; live proof POST {} → done.
+- Follow-up 4 (user): default `WORKMUX_COMMIT_TIMEOUT_MS` raised
+  120000 → 300000 (opencode-commit model runs exceed 2 min); supersedes
+  the "default 120 s" figure in the entry above.
