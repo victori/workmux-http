@@ -693,3 +693,53 @@ original requirements above remain in force unless noted.
 - Live proof: dc-archtics-api/main-test (no upstream, origin ref 2 behind)
   went from `ahead: null` to `ahead: 2`. +2 adapter tests (326 total);
   typecheck + build + 28 e2e clean.
+
+### Reader fit layout + captured-padding strip (2026-11-09, portrait readability)
+- Full-screen pane captures wasted iPhone-portrait space: blank-line padding
+  at the bottom of every snapshot and trailing spaces on lines (phantom
+  horizontal scroll). Reader now strips both before render; screens that are
+  identical after normalization skip the DOM update, so text selection
+  survives padding-only churn.
+- Line layout became a 3-state cycle (wrap → fit → scroll) persisted as
+  `wmhttp:wrapMode`; legacy boolean `wmhttp:wrap` migrates (true→wrap,
+  false→scroll). Default: fit on viewports ≤640px, wrap above.
+- Fit mode shrinks the font (monospace advance ≈ 0.6em) so the widest used
+  column (ANSI stripped) fits the output box width; clamps at 6px, wider
+  content falls back to horizontal scroll. Recomputed on every snapshot and
+  on container resize (ResizeObserver); follow-bottom re-applies after the
+  size change.
+- Verification delta: +5 vitest / −1 replaced wrap test (330 total, incl.
+  legacy-pref migration, padding strip, fit sizing fits/falls-back); e2e
+  wrap test rewritten as layout cycle asserting no page overflow on the
+  iPhone 13 viewport; typecheck + build clean.
+- Found while proving the default: the e2e project spread
+  `...devices['iPhone 13']` at the project top level, where the runner
+  drops it — every "iPhone Safari-like" e2e actually ran at 1280×720.
+  Device options now live in `use` with `defaultBrowserType` stripped
+  (webkit not installed; project `browserName: chromium` wins). All 28
+  e2e pass at the real 390×664 viewport; the text-size persistence test
+  pins the scroll layout since fit intentionally shrinks below presets.
+
+### Reader wrap continuation indent (2026-11-09, user feedback on wrap)
+- Wrapped terminal text was hard to scan: soft-wrapped continuations started
+  at column 0, indistinguishable from new terminal lines. Each snapshot line
+  now renders as its own div (.tl) with a hanging indent (padding-left 1.5em,
+  negative first-line text-indent), so continuations sit ~2.5 monospace cells
+  behind the line start while real lines stay flush. Open spans/links crossing
+  newlines are closed and reopened so colors and OSC-8 links survive; blank
+  lines keep height via min-height. No-op in fit/scroll (no soft wraps).
+- Verification: +2 vitest (332 total: per-line div structure, cross-line span
+  reopen); live proof on the fixture server at 390px in wrap mode — 11
+  wrapped lines, continuation origin 18px behind line start, zero horizontal
+  overflow.
+
+### Portrait default flipped to wrap (2026-11-09, supersedes fit default)
+- Two user screenshots showed ~100-column prose panes: fit would shrink those
+  to ~6px, so wrap (with the new continuation indent) is the sane default at
+  every width. The viewport-based fit default and its matchMedia probe are
+  removed; fit and scroll stay one tap away in the cycle. Stored wrapMode
+  preferences (including scroll) are still respected — the default only
+  applies to fresh profiles.
+- Verification: e2e cycle test re-anchored on the wrap default (wrap→fit→
+  scroll→wrap, no page overflow); text-size persistence test no longer needs
+  a scroll pin; full gate green (typecheck, 332 vitest, build, 28 e2e).

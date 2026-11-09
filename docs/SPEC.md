@@ -195,7 +195,10 @@ the visible viewport, never the expanded grid.
   Only workmux records with a recognized `agent_kind` are listed; kind-less
   panes (plain shells, dev servers) are filtered out of both the agent
   list and message targets.
-- **Agent view**: reader mode (captured output, opens at tail) ↔ terminal
+- **Agent view**: reader mode (captured output, opens at tail, captured
+  padding stripped, line-layout cycle wrap/fit/scroll — wrap indents
+  soft-wrapped continuations, fit shrinks the font so full lines fit the
+  screen width) ↔ terminal
   mode (live WS, mode header, pane-target warning); composer + explicit
   keys; session switcher; previous-agent action; **Commits** button (hidden
   git-less) opening the commit-history list (`/commits`), where each row

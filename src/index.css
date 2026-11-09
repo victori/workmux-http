@@ -66,6 +66,15 @@ select {
   overflow-x: auto;
 }
 
+/* One div per terminal line: soft-wrapped continuations indent behind the
+   line start; the negative first-line indent keeps real lines flush.
+   min-height keeps blank lines visible (matches line-height 1.45). */
+.terminal-output .tl {
+  padding-left: 1.5em;
+  text-indent: -1.5em;
+  min-height: 1.45em;
+}
+
 .terminal-output ::selection {
   background: color-mix(in srgb, var(--color-accent) 40%, transparent);
 }

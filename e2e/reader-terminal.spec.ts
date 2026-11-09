@@ -50,10 +50,15 @@ test.describe('agent reader/terminal modes (fixture mode)', () => {
     await expect(page.locator('.terminal-output')).toHaveCSS('font-size', '14px')
   })
 
-  test('should toggle wrapping without overflowing the page', async ({ page }) => {
+  test('should cycle line layouts without overflowing the page', async ({ page }) => {
     await expect(page.locator('.terminal-output')).toBeVisible()
-    await page.getByRole('button', { name: /Wrap lines on/i }).click()
+    // default layout is wrap: lines fit, no horizontal scroll
+    await expect(page.locator('.terminal-output:not(.no-wrap)')).toBeVisible()
+    await page.getByRole('button', { name: /layout: wrap/i }).click()
     await expect(page.locator('.terminal-output.no-wrap')).toBeVisible()
+    await page.getByRole('button', { name: /layout: fit/i }).click()
+    await page.getByRole('button', { name: /layout: scroll/i }).click()
+    await expect(page.locator('.terminal-output:not(.no-wrap)')).toBeVisible()
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     )

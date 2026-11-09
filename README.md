@@ -60,7 +60,7 @@ offers similar features.
 2. **Check in from your phone.** Connect through your VPN and open the dashboard
    in the browser. Find the project, worktree, or agent that needs attention.
 3. **Read and steer.** Open Reader, follow recent output, adjust text size or
-   wrapping, and send a message or an explicit key through the composer.
+   line layout (wrap / fit / scroll), and send a message or an explicit key through the composer.
 4. **Review the result.** Inspect diffs, stage the intended changes, and either
    ask the agent to commit or use a configured direct-commit command. Review
    the listed commits before confirming a push; confirm lifecycle actions
@@ -72,9 +72,13 @@ offers similar features.
 ## Philosophy and boundaries
 
 **Adapt the interaction, not the agent.** Reader presents captured pane output
-in a browser-friendly surface. Wrapping helps prose fit portrait screens, but
-does not reconstruct structured conversations or reliably reflow TUI tables,
-borders, and cursor-driven layouts. Terminal preserves a terminal grid instead.
+in a browser-friendly surface. Three line layouts cover portrait screens:
+wrap for prose (soft-wrapped continuations are indented so they read apart
+from new terminal lines), fit (the font shrinks so full terminal lines fit the
+screen width, keeping borders and tables aligned), and scroll for fixed-size
+horizontal swiping. Reader still does not reconstruct structured
+conversations or reliably reflow TUI tables, borders, and cursor-driven
+layouts. Terminal preserves a terminal grid instead.
 
 **Do not silently rearrange the desktop.** Rotation and keyboard changes do
 not automatically resize the shared terminal. Resizing is explicit and

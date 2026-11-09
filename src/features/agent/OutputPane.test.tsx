@@ -150,6 +150,33 @@ describe('OutputPane snapshot rendering', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 
+  it('renders each terminal line as its own div for continuation indent', async () => {
+    vi.mocked(api.output).mockResolvedValue(out('alpha\nbravo\ncharlie'))
+    const { container } = renderPane()
+    await waitFor(() => expect(container.querySelectorAll('.tl').length).toBe(3))
+    expect(container.querySelector('.terminal-output')?.textContent).toBe('alphabravocharlie')
+  })
+
+  it('reopens color spans across line boundaries', async () => {
+    vi.mocked(api.output).mockResolvedValue(out('\x1b[32mgreen line one\ngreen line two\x1b[0m\nplain'))
+    const { container } = renderPane()
+    const lines = await waitFor(() => {
+      const ls = container.querySelectorAll('.tl')
+      expect(ls.length).toBe(3)
+      return ls
+    })
+    expect(lines[0]!.innerHTML).toContain('<span')
+    expect(lines[1]!.innerHTML).toContain('<span')
+    expect(lines[1]!.innerHTML).toContain('</span>')
+    expect(lines[2]!.innerHTML).not.toContain('<span')
+  })
+
+  it('strips captured padding: trailing spaces and blank lines', async () => {
+    vi.mocked(api.output).mockResolvedValue(out('last line   \n  \n\n\n'))
+    const { container } = renderPane()
+    await waitFor(() => expect(container.querySelector('.terminal-output')?.textContent).toBe('last line'))
+  })
+
   it('leaves the DOM untouched when the screen is unchanged', async () => {
     const { container } = renderPane()
     await waitFor(() => expect(container.textContent).toContain('first screen'))
@@ -183,10 +210,52 @@ describe('OutputPane preferences', () => {
     expect(screen.getByRole('button', { name: 'Decrease text size' })).not.toBeDisabled()
   })
 
-  it('persists the wrap toggle', async () => {
+  it('cycles the line layout and persists it', async () => {
     renderPane()
-    fireEvent.click(screen.getByRole('button', { name: /Wrap lines on/i }))
-    expect(localStorage.getItem('wmhttp:wrap')).toBe('false')
-    expect(screen.getByRole('button', { name: /Wrap lines off/i })).toBeInTheDocument()
+    // default layout is wrap
+    expect(screen.getByRole('button', { name: /layout: wrap/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /layout: wrap/i }))
+    expect(localStorage.getItem('wmhttp:wrapMode')).toBe('"fit"')
+    fireEvent.click(screen.getByRole('button', { name: /layout: fit/i }))
+    expect(localStorage.getItem('wmhttp:wrapMode')).toBe('"scroll"')
+    fireEvent.click(screen.getByRole('button', { name: /layout: scroll/i }))
+    expect(localStorage.getItem('wmhttp:wrapMode')).toBe('"wrap"')
+  })
+
+  it('migrates the legacy wrap boolean preference', async () => {
+    localStorage.setItem('wmhttp:wrap', 'false')
+    renderPane()
+    expect(screen.getByRole('button', { name: /layout: scroll/i })).toBeInTheDocument()
+    localStorage.setItem('wmhttp:wrap', 'true')
+    cleanup()
+    renderPane()
+    expect(screen.getByRole('button', { name: /layout: wrap/i })).toBeInTheDocument()
+  })
+
+  it('shrinks the font in fit mode so wide lines fit the screen', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 400 })
+    try {
+      localStorage.setItem('wmhttp:wrapMode', '"fit"')
+      vi.mocked(api.output).mockResolvedValue(out('x'.repeat(80)))
+      const { container } = renderPane()
+      await waitFor(() =>
+        expect(container.querySelector('.terminal-output')).toHaveStyle({ fontSize: '7px' }),
+      )
+    } finally {
+      delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
+  })
+
+  it('keeps the preset size in fit mode when content already fits', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 400 })
+    try {
+      localStorage.setItem('wmhttp:wrapMode', '"fit"')
+      vi.mocked(api.output).mockResolvedValue(out('x'.repeat(40)))
+      const { container } = renderPane()
+      await waitFor(() => expect(api.output).toHaveBeenCalled())
+      expect(container.querySelector('.terminal-output')).toHaveStyle({ fontSize: '12px' })
+    } finally {
+      delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
   })
 })

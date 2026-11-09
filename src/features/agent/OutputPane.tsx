@@ -20,10 +20,89 @@ function loadTextSize(): TextSize {
 }
 
 /**
+ * Line layout modes:
+ * - wrap: lines soft-wrap to the screen (prose-friendly; breaks TUI borders)
+ * - fit: no wrap; font shrinks so the widest used column fits the screen
+ * - scroll: no wrap, fixed size; swipe horizontally
+ */
+type LayoutMode = 'wrap' | 'fit' | 'scroll'
+const LAYOUT_ORDER: LayoutMode[] = ['wrap', 'fit', 'scroll']
+const LAYOUT_LABELS: Record<LayoutMode, string> = {
+  wrap: '↩ wrap',
+  fit: '⤢ fit',
+  scroll: '↔ scroll',
+}
+const LAYOUT_TITLES: Record<LayoutMode, string> = {
+  wrap: 'Lines wrap at spaces; wrapped continuations are indented. TUI borders may break',
+  fit: 'No wrapping — text shrinks so full lines fit the screen width',
+  scroll: 'Fixed size, no wrapping — swipe horizontally',
+}
+
+/** Monospace advance width as a fraction of font size (SF Mono/Menlo ≈ 0.6). */
+const CHAR_W_RATIO = 0.6
+/** Fit never shrinks below this; wider content falls back to horizontal scroll. */
+const MIN_FIT_PX = 6
+/** Horizontal padding of the output box (p-3 = 12px each side). */
+const BOX_PAD_PX = 24
+
+function loadLayout(): LayoutMode {
+  const stored = loadPref<string>('wrapMode', '')
+  if (LAYOUT_ORDER.includes(stored as LayoutMode)) return stored as LayoutMode
+  // Legacy boolean pref: wrap-off becomes scroll; wrap-on is the default.
+  return loadPref<boolean | null>('wrap', null) === false ? 'scroll' : 'wrap'
+}
+
+/** CSI, OSC (incl. OSC 8 hyperlinks) and Fe escapes — for column counting. */
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g
+
+/**
+ * Full-screen captures pad the bottom with blank lines and lines with trailing
+ * spaces. Strip both: blank padding wastes portrait vertical space, trailing
+ * spaces add phantom horizontal scroll. Also reports the widest used column
+ * (ANSI stripped) so fit mode can size the font.
+ */
+function normalizeSnapshot(text: string): { text: string; maxCols: number } {
+  const trimmed = text.replace(/[ \t]+$/gm, '').replace(/\n+$/, '')
+  let maxCols = 0
+  for (const line of trimmed.split('\n')) {
+    const cols = line.replace(ANSI_RE, '').length
+    if (cols > maxCols) maxCols = cols
+  }
+  return { text: trimmed, maxCols }
+}
+
+/**
+ * Wrap each terminal line in a div so soft-wrapped continuations hang behind
+ * the line start (CSS .tl), making them distinguishable from new terminal
+ * lines. Spans/links left open at a newline are closed and reopened so colors
+ * and OSC-8 links survive the split.
+ */
+function splitIntoLines(html: string): string {
+  const tagRe = /<(\/?)(span|a)\b[^>]*>/g
+  const open: { open: string; close: string }[] = []
+  const out: string[] = []
+  for (const raw of html.split('\n')) {
+    const reopen = open.map((t) => t.open).join('')
+    tagRe.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = tagRe.exec(raw)) !== null) {
+      if (m[1] === '/') open.pop()
+      else open.push({ open: m[0], close: `</${m[2]}>` })
+    }
+    const closers = open.map((t) => t.close).reverse().join('')
+    out.push(`<div class="tl">${reopen}${raw}${closers}</div>`)
+  }
+  return out.join('')
+}
+
+/**
  * Reader pane for an agent's terminal screen snapshot. The response is a full
  * screen: content is replaced wholesale each poll, and identical text skips the
- * DOM update so text selection survives. This is a live snapshot, not a
- * conversation log — wrapping may break TUI borders (disclosed in the UI).
+ * DOM update so text selection survives. Captured padding (trailing blank
+ * lines, trailing spaces) is stripped before rendering. Three line layouts —
+ * wrap (soft-wrapped continuations hang behind the line start), fit (font
+ * shrinks so full lines fit the screen width, keeping TUI alignment), scroll
+ * — cycled from the toolbar. This is a live snapshot, not a conversation log.
  * While inactive (Terminal mode), polling pauses and late responses are
  * dropped; scroll/follow state persists for the return.
  */
@@ -43,18 +122,22 @@ export function OutputPane({
   const [html, setHtml] = useState('')
   const [targetGone, setTargetGone] = useState(false)
   const [outputError, setOutputError] = useState<string | null>(null)
-  const [wrap, setWrap] = useState<boolean>(() => loadPref<boolean>('wrap', true))
+  const [layout, setLayout] = useState<LayoutMode>(loadLayout)
   const [textSize, setTextSize] = useState<TextSize>(loadTextSize)
+  const [fitPx, setFitPx] = useState(0)
   const [showJump, setShowJump] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
   const lastTextRef = useRef('')
+  const maxColsRef = useRef(0)
   const inFlightRef = useRef(false)
 
   const agentId = agent?.id ?? null
 
   useEffect(() => {
     lastTextRef.current = ''
+    maxColsRef.current = 0
+    setFitPx(0)
     followRef.current = true
     setShowJump(false)
     setTargetGone(false)
@@ -77,10 +160,12 @@ export function OutputPane({
           setTargetGone(false)
           setOutputError(null)
           if (outputRef) outputRef.current = res.text
-          // Identical screen: skip the update to preserve selection.
-          if (res.text === lastTextRef.current) return
-          lastTextRef.current = res.text
-          setHtml(ansi.ansi_to_html(res.text))
+          const snap = normalizeSnapshot(res.text)
+          // Identical screen (ignoring padding churn): skip to preserve selection.
+          if (snap.text === lastTextRef.current) return
+          lastTextRef.current = snap.text
+          maxColsRef.current = snap.maxCols
+          setHtml(splitIntoLines(ansi.ansi_to_html(snap.text)))
         })
         .catch((err: unknown) => {
           if (cancelled) return
@@ -112,11 +197,28 @@ export function OutputPane({
     }
   }, [agentId, active, ansi, outputRef])
 
+  // Fit mode: shrink the font until the widest used column fits the box.
+  // Below MIN_FIT_PX the clamp kicks in and the box scrolls horizontally.
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || layout !== 'fit') return
+    const compute = () => {
+      const cols = maxColsRef.current
+      const avail = el.clientWidth - BOX_PAD_PX
+      setFitPx(cols > 0 && avail > 0 ? Math.max(MIN_FIT_PX, Math.floor(avail / (cols * CHAR_W_RATIO))) : 0)
+    }
+    compute()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(compute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [html, layout])
+
   // Follow the bottom only when the user hasn't scrolled away.
   useEffect(() => {
     const el = boxRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
-  }, [html])
+  }, [html, fitPx])
 
   const onScroll = () => {
     const el = boxRef.current
@@ -133,10 +235,11 @@ export function OutputPane({
     setShowJump(false)
   }
 
-  const toggleWrap = () => {
-    setWrap((w) => {
-      savePref('wrap', !w)
-      return !w
+  const cycleLayout = () => {
+    setLayout((m) => {
+      const next = LAYOUT_ORDER[(LAYOUT_ORDER.indexOf(m) + 1) % LAYOUT_ORDER.length]!
+      savePref('wrapMode', next)
+      return next
     })
   }
 
@@ -160,6 +263,9 @@ export function OutputPane({
       </div>
     )
   }
+
+  const userPx = TEXT_SIZES[textSize]
+  const fontPx = layout === 'fit' && fitPx > 0 ? Math.min(userPx, fitPx) : userPx
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
@@ -186,17 +292,12 @@ export function OutputPane({
           </button>
         </div>
         <button
-          onClick={toggleWrap}
-          aria-pressed={wrap}
-          aria-label={wrap ? 'Wrap lines on — may break TUI borders' : 'Wrap lines off — horizontal scroll keeps alignment'}
-          title={
-            wrap
-              ? 'Snapshot of the terminal screen; wrapping may break TUI borders and tables'
-              : 'Aligned tables and source keep columns; swipe to scroll'
-          }
+          onClick={cycleLayout}
+          aria-label={`Line layout: ${layout} — tap for ${LAYOUT_ORDER[(LAYOUT_ORDER.indexOf(layout) + 1) % LAYOUT_ORDER.length]}`}
+          title={LAYOUT_TITLES[layout]}
           className="min-h-0 rounded-md px-2 py-1 text-xs text-fg-muted"
         >
-          {wrap ? '↩ wrap on' : '↔ wrap off'}
+          {LAYOUT_LABELS[layout]}
         </button>
       </div>
       {outputError && (
@@ -207,8 +308,8 @@ export function OutputPane({
       <div
         ref={boxRef}
         onScroll={onScroll}
-        className={`terminal-output min-h-0 min-w-0 flex-1 overflow-auto p-3 ${wrap ? '' : 'no-wrap'}`}
-        style={{ fontSize: TEXT_SIZES[textSize] }}
+        className={`terminal-output min-h-0 min-w-0 flex-1 overflow-auto p-3 ${layout === 'wrap' ? '' : 'no-wrap'}`}
+        style={{ fontSize: fontPx }}
       >
         <div dangerouslySetInnerHTML={{ __html: html }} />
       </div>
