@@ -12,9 +12,9 @@ export interface GitInfo {
   hasUnstaged: boolean
   hasUnmergedCommits: boolean
   unborn: boolean
-  /** Commits ahead of upstream (unpushed). Null = no upstream configured. */
+  /** Commits ahead of upstream (unpushed). Null = no upstream and no origin/<branch> ref. */
   ahead: number | null
-  /** Commits behind upstream. Null = no upstream configured. */
+  /** Commits behind upstream. Null = no upstream and no origin/<branch> ref. */
   behind: number | null
   /** Distinct files with pending changes (untracked+staged+unstaged+conflicts). */
   pendingChanges?: number | null
@@ -55,7 +55,7 @@ export interface WorktreeView {
   agentStatuses: AgentStatus[]
   createdAt: number
   prUrl: string | null
-  /** Unpushed commit count (ahead of upstream). Null = no upstream / no git info. */
+  /** Unpushed commit count (ahead of upstream or origin/<branch>). Null = unknown / no git info. */
   unpushed: number | null
 }
 

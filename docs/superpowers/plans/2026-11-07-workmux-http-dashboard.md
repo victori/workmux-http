@@ -679,3 +679,17 @@ original requirements above remain in force unless noted.
   3 DiffView commit-mode, 2 AgentView button) +1 e2e (28 total: graceful
   degradation + sha validation); typecheck + build clean; live smoke on a
   spare port against the real repo (list + parent-1 diff of a real commit).
+
+### Unpushed badge without configured upstream (2026-11-09, user report)
+- Branches pushed WITHOUT `-u` (e.g. `git push origin main-test`) have no
+  tracking config, so porcelain emits no `# branch.ab` and the dashboard
+  showed no unpushed badge despite commits sitting ahead of origin.
+- `repoStatus` now falls back to `origin/<branch>` when no upstream is set
+  and that remote-tracking ref exists (same rule `unpushedCommits` already
+  used for push review — badge and push dialog now agree): ahead/behind via
+  `rev-list --left-right --count`, flagged `upstreamAssumed`. Discovery
+  maps counts through when assumed; branches with neither upstream nor
+  origin ref (true first push) stay badge-less as before.
+- Live proof: dc-archtics-api/main-test (no upstream, origin ref 2 behind)
+  went from `ahead: null` to `ahead: 2`. +2 adapter tests (326 total);
+  typecheck + build + 28 e2e clean.

@@ -421,3 +421,58 @@ describe('commit history', () => {
     expect(info).toMatchObject({ sha: mergeSha, subject: 'merge side', isMerge: true, author: 'Test' })
   })
 })
+
+describe('unpushed fallback without configured upstream', () => {
+  let originDir: string
+  let cloneDir: string
+  const gitO = (args: string[]): string => execFileSync('git', args, { cwd: originDir, encoding: 'utf8' })
+  const gitC = (args: string[]): string => execFileSync('git', args, { cwd: cloneDir, encoding: 'utf8' })
+
+  beforeAll(() => {
+    originDir = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-origin-'))
+    cloneDir = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-clone-'))
+    gitO(['init', '-q', '--bare', '--initial-branch=main', originDir])
+    execFileSync('git', ['clone', '-q', originDir, cloneDir])
+    gitC(['config', 'user.email', 't@t.local'])
+    gitC(['config', 'user.name', 'T'])
+    gitC(['config', 'commit.gpgsign', 'false'])
+    writeFileSync(path.join(cloneDir, 'f.txt'), 'x\n')
+    gitC(['add', 'f.txt'])
+    gitC(['commit', '-qm', 'seed'])
+    gitC(['push', '-q', 'origin', 'main']) // no -u: upstream stays unset
+    gitC(['checkout', '-qb', 'main-test'])
+    writeFileSync(path.join(cloneDir, 'g.txt'), 'y\n')
+    gitC(['add', 'g.txt'])
+    gitC(['commit', '-qm', 'work 1'])
+    gitC(['push', '-q', 'origin', 'main-test']) // remote ref exists, no tracking
+    writeFileSync(path.join(cloneDir, 'h.txt'), 'z\n')
+    gitC(['add', 'h.txt'])
+    gitC(['commit', '-qm', 'work 2'])
+    gitC(['checkout', '-qb', 'brand-new'])
+  })
+
+  afterAll(() => {
+    if (originDir) rmSync(originDir, { recursive: true, force: true })
+    if (cloneDir) rmSync(cloneDir, { recursive: true, force: true })
+  })
+
+  test('should derive ahead/behind from origin/<branch> when upstream is unset', async () => {
+    const s = await repoStatus(cloneDir)
+    expect(s.branch).toBe('brand-new')
+    expect(s.hasUpstream).toBe(false)
+    expect(s.upstreamAssumed).toBe(false) // no origin/brand-new ref → discovery maps ahead to null
+    gitC(['checkout', '-q', 'main-test'])
+    const t = await repoStatus(cloneDir)
+    expect(t.hasUpstream).toBe(false)
+    expect(t.upstreamAssumed).toBe(true)
+    expect(t.ahead).toBe(1) // 'work 2' not on origin/main-test
+    expect(t.behind).toBe(0)
+  })
+
+  test('should report zero ahead when fully pushed without upstream', async () => {
+    gitC(['push', '-q', 'origin', 'main-test'])
+    const s = await repoStatus(cloneDir)
+    expect(s.upstreamAssumed).toBe(true)
+    expect(s.ahead).toBe(0)
+  })
+})

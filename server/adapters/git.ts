@@ -15,6 +15,8 @@ export interface RepoStatus {
   behind: number
   /** True when porcelain reported `# branch.ab`, i.e. an upstream is set. */
   hasUpstream: boolean
+  /** True when ahead/behind were derived from origin/<branch> (no configured upstream). */
+  upstreamAssumed: boolean
   untracked: string[]
   /** Tracked files with worktree-side changes not fully staged. */
   unstaged: string[]
@@ -65,6 +67,7 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     ahead: 0,
     behind: 0,
     hasUpstream: false,
+    upstreamAssumed: false,
     untracked: [],
     unstaged: [],
     staged: [],
@@ -108,6 +111,22 @@ export async function repoStatus(cwd: string): Promise<RepoStatus> {
     } else if (rec.startsWith('? ')) {
       status.untracked.push(rec.slice(2))
       status.pendingChanges += 1
+    }
+  }
+  // No configured upstream: fall back to origin/<branch> when that remote
+  // ref exists (same rule unpushedCommits uses), so unpushed badges work
+  // for branches pushed without -u.
+  if (!status.hasUpstream && status.branch && !status.unborn && SAFE_REV.test(status.branch)) {
+    const remoteRef = `refs/remotes/origin/${status.branch}`
+    const hasRef = await run(['git', 'show-ref', '--verify', '--quiet', remoteRef], { cwd })
+    if (hasRef.code === 0) {
+      const counts = await run(['git', 'rev-list', '--left-right', '--count', `origin/${status.branch}...HEAD`], { cwd })
+      const m = counts.stdout.trim().match(/^(\d+)\s+(\d+)$/)
+      if (counts.code === 0 && m) {
+        status.behind = Number(m[1] ?? 0)
+        status.ahead = Number(m[2] ?? 0)
+        status.upstreamAssumed = true
+      }
     }
   }
   return status
