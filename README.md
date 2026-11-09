@@ -13,12 +13,11 @@ machine. Self-hosted over your VPN; no app login.
     <td><img src="docs/screenshots/image1.jpg" alt="workmux-http screenshot 1" width="220"></td>
     <td><img src="docs/screenshots/image2.jpg" alt="workmux-http screenshot 2" width="220"></td>
     <td><img src="docs/screenshots/image3.jpg" alt="workmux-http screenshot 3" width="220"></td>
-    <td><img src="docs/screenshots/image4.jpg" alt="workmux-http screenshot 4" width="220"></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/image4.jpg" alt="workmux-http screenshot 4" width="220"></td>
     <td><img src="docs/screenshots/image5.jpg" alt="workmux-http screenshot 5" width="220"></td>
     <td><img src="docs/screenshots/image6.jpg" alt="workmux-http screenshot 6" width="220"></td>
-    <td><img src="docs/screenshots/image7.jpg" alt="workmux-http screenshot 7" width="220"></td>
   </tr>
 </table>
 
