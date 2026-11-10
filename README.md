@@ -134,7 +134,8 @@ during `npm run dev` open **5173**, not 3000.
 
 Requirements: macOS/Linux with `tmux` on PATH, `workmux` installed, and the
 default tmux server already running your sessions (or set
-`WORKMUX_TMUX_SOCKET`). Node ≥ 22. Optional: `gh` CLI (PR links), `git`.
+`WORKMUX_TMUX_SOCKET`). Node ≥ 22. Optional: `gh` CLI (GitHub PR/CI status;
+must be authenticated — `gh auth login`), `git`.
 
 ## Environment
 
@@ -178,11 +179,39 @@ protection).
 ## What it shows / does
 
 - **Dashboard** — every managed agent (status, elapsed, branch, dirty state) and
-  every worktree (branch, uncommitted, PR link), searchable, filterable,
+  every worktree (branch, uncommitted, PR/CI status), searchable, filterable,
   sortable; preferences persist per tab. Only panes workmux recognizes as
   agents (with an `agent_kind`) are listed — kind-less records such as a
   plain zsh pane running your dev server are filtered out (they aren't
   message targets either).
+- **PR/CI status** — when the `gh` CLI is installed and authenticated, cards
+  show the branch's pull request (number, open/draft/merged/closed, review
+  decision, link) and CI rollup for the exact local commit (passing/failing/
+  pending with counts, per-check links, checked SHA). States are honest:
+  unknown checks never render as passing, a local commit GitHub hasn't seen
+  is unknown (not green), expired data is labeled outdated, and branches on
+  non-GitHub remotes are disclosed as unsupported. GitHub being unreachable
+  never affects the core tmux/workmux connection indicator. Only
+  `github.com` is supported in this release; only the worktree's own
+  remotes are ever queried.
+- **Clean sweep** — the Worktrees tab's *Clean sweep* button scans the
+  currently displayed worktrees for provably clean removal targets: merged or
+  closed PR (exact HEAD), vanished upstream branch, or local merge into the
+  base branch. Dirty work, live agents, open windows, conflicts, rebase
+  operations, main/base worktrees, and unverifiable GitHub state are always
+  shown as blockers — never silently dropped. Review before removal lists the
+  exact targets and warnings (directory deletion includes Git-ignored files;
+  open windows close). **Branches are kept by default**; deleting branches
+  requires unchecking *Keep local branches* and re-review, and only removes a
+  branch whose HEAD is proven an ancestor of the base. Removal runs
+  `workmux remove` **without force — a force path does not exist** — and each
+  target is re-verified immediately before its removal. Results are per-item
+  and honest: `removed` requires a postcondition check (directory gone,
+  branch present/absent per your choice), ambiguous outcomes (timeout,
+  truncated output, server restart) render as *uncertain* and are **never
+  retried**, and a mixed run never collapses into a success message. Closing
+  the browser mid-sweep does not cancel it — reopening the sheet resumes
+  progress reporting. Fixture mode refuses sweep endpoints entirely.
 - **Commits** — agent-view button opening the worktree's `git log` (newest
   first, up to 50 shown); each commit opens its diff vs the first parent
   (merge commits show parent-1 changes; root commits diff against the empty
@@ -305,20 +334,27 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 334 vitest tests (unit + jsdom component + real-tmux
-  integration on a disposable socket incl. terminal geometry audit +
-  real-git hunk staging, path staging, the configurable commit runner, and
+- `npm run test` — 475 vitest tests (unit + jsdom component + real-tmux
+  integration on disposable sockets incl. terminal geometry audit,
+  real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,
-  divergence, and no-origin blocking; plus the SPEC.md drift harness, which
+  divergence, and no-origin blocking, native sweep removal semantics against
+  real workmux (clean remove keeps branch, dirty refusal without force,
+  branch deletion when not kept), the pure sweep-eligibility policy, and
+  the sweep scan/prepare/execute state machine; plus the SPEC.md drift
+  harness, which
   fails the suite when routes/env vars/error codes change without updating
   `docs/SPEC.md`, a core invariant lacks a test mapping, or a mapped test
   is renamed/deleted. The mapping also records coverage limits; reference
   checks do not establish behavior or replace running the tests).
-- `npx playwright test` — 28 e2e tests at iPhone 13 viewport against the
+- `npx playwright test` — 43 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
   reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
   pending-changes + direct-commit contract and graceful degradation,
   push badge/contract paths incl. execute-token rejection,
+  PR/CI badge lifecycle, clean sweep flow with all mutations intercepted
+  (mixed per-item results, stale rejection, resume) plus a live proof the
+  fixture server refuses sweep endpoints,
   theme switching + persistence,
   host/origin/header boundary, confirm-token rejection).
 - `npm run typecheck` — app + server projects clean.
@@ -359,6 +395,10 @@ workmux sidebar itself; palette navigation-only targets.
 - One dashboard poll per browser tab; sends are serialized per pane.
 - Web mutations (merge/push/remove/commit/staging) serialize per worktree —
   a second confirmed action queues until the first operation completes.
+- Clean sweep scans at most 100 worktrees at a time and removes at most 20
+  per confirmed sweep; only one scan and one sweep run at a time. A sweep
+  interrupted by a server restart reports *uncertain* — the dashboard can
+  tell you what it confirmed, never what an unreachable process did.
 - API reads time out after 15 s (a stalled network can never freeze
   polling); mutations have no client deadline — their delivery is decided
   by the server, never by an abort.

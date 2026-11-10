@@ -36,6 +36,14 @@ export function saveTab<T>(key: string, value: T): void {
   }
 }
 
+export function removeTab(key: string): void {
+  try {
+    sessionStorage.removeItem(SESSION_PREFIX + key)
+  } catch {
+    // tab memory is best-effort
+  }
+}
+
 /** Clipboard with HTTP fallback for non-secure contexts (Safari over VPN HTTP). */
 export async function copyText(text: string): Promise<boolean> {
   try {

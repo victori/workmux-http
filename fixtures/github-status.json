@@ -1,0 +1,105 @@
+{
+  "wt_b456a632633f": {
+    "state": "ready",
+    "pr": {
+      "number": 128,
+      "title": "Add timezone-aware scheduling",
+      "url": "https://github.com/acme/sample-app-alpha/pull/128",
+      "state": "open",
+      "review": "review_required",
+      "headOid": "3f2a91c44d0e5b6a7c8d9e0f1a2b3c4d5e6f7a8b",
+      "headRepository": "acme/sample-app-alpha",
+      "baseRepository": "acme/sample-app-alpha",
+      "baseBranch": "main"
+    },
+    "ci": {
+      "state": "pending",
+      "commitOid": "3f2a91c44d0e5b6a7c8d9e0f1a2b3c4d5e6f7a8b",
+      "complete": false,
+      "counts": { "passing": 3, "failing": 0, "pending": 2, "neutral": 0, "unknown": 0 },
+      "checks": [
+        { "name": "test", "state": "pending", "url": "https://github.com/acme/sample-app-alpha/actions/runs/1281" },
+        { "name": "lint", "state": "passing", "url": "https://github.com/acme/sample-app-alpha/actions/runs/1280" }
+      ]
+    },
+    "observedAt": 1762670000000,
+    "attemptedAt": 1762670000000,
+    "error": null
+  },
+  "wt_6af13e5a1704": {
+    "state": "ready",
+    "pr": {
+      "number": 64,
+      "title": "Fix nightly job retries",
+      "url": "https://github.com/acme/sample-app-beta/pull/64",
+      "state": "open",
+      "review": "approved",
+      "headOid": "9c8b7a6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+      "headRepository": "acme/sample-app-beta",
+      "baseRepository": "acme/sample-app-beta",
+      "baseBranch": "master"
+    },
+    "ci": {
+      "state": "failing",
+      "commitOid": "9c8b7a6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+      "complete": false,
+      "counts": { "passing": 1, "failing": 2, "pending": 1, "neutral": 0, "unknown": 0 },
+      "checks": [
+        { "name": "integration", "state": "failing", "url": "https://github.com/acme/sample-app-beta/actions/runs/6401" },
+        { "name": "e2e", "state": "failing", "url": "https://github.com/acme/sample-app-beta/actions/runs/6402" },
+        { "name": "build", "state": "passing", "url": "https://github.com/acme/sample-app-beta/actions/runs/6400" }
+      ]
+    },
+    "observedAt": 1762670000000,
+    "attemptedAt": 1762670000000,
+    "error": null
+  },
+  "wt_107455a78136": {
+    "state": "ready",
+    "pr": null,
+    "ci": {
+      "state": "none",
+      "commitOid": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "complete": true,
+      "counts": { "passing": 0, "failing": 0, "pending": 0, "neutral": 0, "unknown": 0 },
+      "checks": []
+    },
+    "observedAt": 1762670000000,
+    "attemptedAt": 1762670000000,
+    "error": null
+  },
+  "wt_c71e94902f0c": {
+    "state": "stale",
+    "pr": {
+      "number": 42,
+      "title": "Release 2.3.0",
+      "url": "https://github.com/acme/sample-app-beta/pull/42",
+      "state": "merged",
+      "review": "approved",
+      "headOid": "5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1",
+      "headRepository": "acme/sample-app-beta",
+      "baseRepository": "acme/sample-app-beta",
+      "baseBranch": "master"
+    },
+    "ci": {
+      "state": "passing",
+      "commitOid": "5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1",
+      "complete": true,
+      "counts": { "passing": 4, "failing": 0, "pending": 0, "neutral": 0, "unknown": 0 },
+      "checks": [
+        { "name": "test", "state": "passing", "url": "https://github.com/acme/sample-app-beta/actions/runs/4200" }
+      ]
+    },
+    "observedAt": 1762660000000,
+    "attemptedAt": 1762660000000,
+    "error": null
+  },
+  "wt_44b45f864288": {
+    "state": "unavailable",
+    "pr": null,
+    "ci": null,
+    "observedAt": null,
+    "attemptedAt": 1762670000000,
+    "error": "gh: authentication required (gh auth login)"
+  }
+}

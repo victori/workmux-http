@@ -9,10 +9,15 @@ import { checkRequest } from './security.js'
 import { Tmux } from './adapters/tmux.js'
 import { Workmux, DependencyError } from './adapters/workmux.js'
 import { SAFE_REV } from './adapters/git.js'
+import { GithubProvider } from './adapters/github.js'
+import { SweepGit } from './adapters/sweep-git.js'
 import { Discovery } from './services/discovery.js'
+import { GithubStatusService } from './services/github-status.js'
 import { InputService, TargetGoneError, UnknownDeliveryError } from './services/input.js'
 import { Management, BadRequestError, TargetNotFoundError, ConfirmationError } from './services/management.js'
 import { Operations } from './services/operations.js'
+import { SweepService, SweepBusyError, SnapshotStaleError } from './services/sweep.js'
+import { TargetLocks } from './services/target-locks.js'
 import { TerminalHub } from './services/terminal.js'
 
 const MessageBody = z.object({
@@ -97,6 +102,24 @@ const CreateBody = z.object({
   requestId: z.string().min(1).max(64),
 })
 
+const SweepScanBody = z.strictObject({
+  worktreeIds: z.array(z.string().min(1).max(64)).min(1).max(BOUNDS.sweepScanMaxTargets),
+  requestId: z.string().min(1).max(64),
+})
+
+const SweepPrepareBody = z.strictObject({
+  scanId: z.string().min(1).max(64),
+  worktreeIds: z.array(z.string().min(1).max(64)).min(1).max(BOUNDS.sweepExecuteMaxTargets),
+  keepBranches: z.boolean(),
+  requestId: z.string().min(1).max(64),
+})
+
+const SweepExecuteBody = z.strictObject({
+  confirmToken: z.string().regex(/^[0-9a-f]{24}$/),
+  acceptWarnings: z.boolean(),
+  requestId: z.string().min(1).max(64),
+})
+
 export interface AppDeps {
   cfg: AppConfig
   tmux: Tmux
@@ -105,19 +128,31 @@ export interface AppDeps {
   input: InputService
   management: Management
   operations: Operations
+  targetLocks: TargetLocks
   terminals: TerminalHub
+  sweeps: SweepService
 }
 
 export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps } {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 })
   const tmux = new Tmux(cfg.tmuxSocket ?? '')
   const workmux = new Workmux()
-  const discovery = new Discovery(cfg, tmux, workmux)
+  const githubStatus = new GithubStatusService(new GithubProvider())
+  const discovery = new Discovery(cfg, tmux, workmux, githubStatus)
   const input = new InputService(cfg, tmux, discovery)
   const operations = new Operations()
-  const management = new Management(cfg, tmux, workmux, discovery, operations)
+  const targetLocks = new TargetLocks(operations)
+  const management = new Management(cfg, tmux, workmux, discovery, operations, targetLocks)
   const terminals = new TerminalHub(cfg, tmux, discovery)
-  const deps: AppDeps = { cfg, tmux, workmux, discovery, input, management, operations, terminals }
+  const sweeps = new SweepService({
+    discovery,
+    github: githubStatus,
+    sweepGit: new SweepGit(),
+    workmux,
+    locks: targetLocks,
+    operations,
+  })
+  const deps: AppDeps = { cfg, tmux, workmux, discovery, input, management, operations, targetLocks, terminals, sweeps }
 
   app.register(fastifyWebsocket, { options: { maxPayload: BOUNDS.maxWsMessageBytes } })
 
@@ -372,6 +407,39 @@ export function buildApp(cfg: AppConfig): { app: FastifyInstance; deps: AppDeps 
     }
   })
 
+  app.post('/api/sweeps/scan', async (req, reply) => {
+    const parsed = SweepScanBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    if (cfg.fixtureDir) return reply.code(400).send({ error: 'bad_request', detail: 'clean sweep unavailable in fixture mode' })
+    try {
+      return reply.code(202).send(await sweeps.scan(parsed.data))
+    } catch (err) {
+      return sweepReply(reply, err)
+    }
+  })
+
+  app.post('/api/sweeps/prepare', async (req, reply) => {
+    const parsed = SweepPrepareBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    if (cfg.fixtureDir) return reply.code(400).send({ error: 'bad_request', detail: 'clean sweep unavailable in fixture mode' })
+    try {
+      return await sweeps.prepare(parsed.data)
+    } catch (err) {
+      return sweepReply(reply, err)
+    }
+  })
+
+  app.post('/api/sweeps/execute', (req, reply) => {
+    const parsed = SweepExecuteBody.safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', detail: parsed.error.issues[0]?.message })
+    if (cfg.fixtureDir) return reply.code(400).send({ error: 'bad_request', detail: 'clean sweep unavailable in fixture mode' })
+    try {
+      return reply.code(202).send(sweeps.execute(parsed.data))
+    } catch (err) {
+      return sweepReply(reply, err)
+    }
+  })
+
   app.get('/api/operations/:id', async (req, reply) => {
     const { id } = IdParams.parse(req.params)
     const op = operations.get(id)
@@ -492,6 +560,12 @@ function mgmtReply(reply: FastifyReply, err: unknown): unknown {
   if (err instanceof BadRequestError) return reply.code(400).send({ error: 'bad_request', detail: err.message })
   if (err instanceof ConfirmationError) return reply.code(409).send({ error: 'confirmation_required', detail: err.message })
   return dependencyReply(reply, err)
+}
+
+function sweepReply(reply: FastifyReply, err: unknown): unknown {
+  if (err instanceof SweepBusyError) return reply.code(409).send({ error: 'sweep_busy', detail: err.message })
+  if (err instanceof SnapshotStaleError) return reply.code(409).send({ error: 'snapshot_stale', detail: err.message })
+  return mgmtReply(reply, err)
 }
 
 function errorMessage(err: unknown): string {

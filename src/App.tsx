@@ -183,6 +183,7 @@ export default function App() {
               onOpenDiff={(id, label) => setRoute({ view: 'diff', worktreeId: id, label })}
               onOpenTerminal={(id) => openAgentAs(id, 'terminal')}
               onCreate={() => setCreateOpen(true)}
+              onRefresh={() => dash.refresh(true)}
               themeId={themeId}
               onChangeTheme={changeTheme}
             />

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ActionType, OperationView, PreparedAction, WorktreeView } from '@shared/types'
 import { api, ApiError, newRequestId } from '../../lib/api'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { PrCiStatus } from '../../components/PrCiStatus'
 import { StatusDots } from '../../components/StatusBadge'
 import { truncateMiddle } from './agentSort'
 
@@ -123,15 +124,10 @@ export function WorktreeCard({
         </p>
         <StatusDots statuses={worktree.agentStatuses} />
       </div>
-      {worktree.prUrl && (
-        <a
-          href={worktree.prUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 inline-block text-xs text-accent"
-        >
-          PR ↗
-        </a>
+      {worktree.github !== undefined && (
+        <div className="mt-1">
+          <PrCiStatus status={worktree.github} />
+        </div>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
         <button

@@ -806,3 +806,96 @@ original requirements above remain in force unless noted.
   have git: null; the branch render path is the existing live GitInfo used
   by badges). One unrelated suite flake observed once, not reproducible in
   three subsequent full runs.
+
+## Amendment — 2026-11-09: PR/CI visibility (Phase 1 of
+## 2026-11-09-pr-ci-status-and-clean-sweep)
+
+- What: replaced the legacy `gh pr view --head` PR-url probe (invalid argv
+  against installed gh v2.103.3; silently produced no links) with a full
+  PR/CI overlay. New `server/adapters/github.ts` (gh CLI: `pr list --head`
+  + GraphQL `statusCheckRollup`, zod-validated, fork-parent resolution,
+  pagination caps), `server/services/github-status.ts` (per-identity cache:
+  60 s TTL, 15 s failure backoff, concurrency 4, queue 100, cache 1000,
+  departed-key pruning), `GitInfo.headOid`, `WorktreeView.github`
+  (GithubStatus), and `src/components/PrCiStatus.tsx` mounted on agent +
+  worktree cards outside nav buttons. `prUrl` kept as ready-only
+  compatibility projection; `git.prUrl`/`ghAvailable`/`prCache`/`prTtlMs`
+  removed.
+- Why: design 2026-11-09 §1–§3 — CI/PR visibility with honest degradation;
+  discovery never awaits the network (identity + status appear as
+  loading→ready across cycles); unknown/incomplete never renders as
+  passing; GitHub failure never marks core sources failed (INV-06/INV-10
+  extension; SPEC updated with the overlay contract + test mappings).
+- Verification delta: +33 vitest (github adapter 15, git identity 8,
+  status service 7, discovery join 3) + component/card tests (PrCiStatus 8,
+  AgentCard +2) + `e2e/pr-ci.spec.ts` (11 fixture-backed states incl.
+  draft/closed/merged/none/stale/unsupported/unavailable/unknown).
+  Provider semantics established against fixture/recorded payloads; live
+  GitHub reads not required for the gate.
+
+### 2026-11-09 (phase 2): confirmed non-force clean sweep
+
+- What changed: new `server/services/sweep-policy.ts` (pure eligibility:
+  reason precedence pr_merged > pr_closed > upstream_gone > merged_locally;
+  blockers accumulate independently — dirty, live panes, open windows,
+  conflicts/in-progress ops, main/base, unsafe refs, degraded sources,
+  unverifiable GitHub state; keepBranches additionally requires proven
+  ancestry), `server/services/target-locks.ts` (shared per-target locks
+  held until an operation settles; Management now delegates to it),
+  `server/adapters/sweep-git.ts` (porcelain v2 facts, rebase/merge/cherry-
+  pick/bisect sentinels, upstream present/gone/unknown via `ls-remote`
+  with `ext::`-refusal, SAFE_REV-gated ancestry, removal postconditions),
+  `workmux remove` gained `keepBranch` → `--keep-branch` (native, v0.1.281),
+  `server/services/sweep.ts` (scan operation with per-row evidence +
+  blockers; prepare re-reads everything and binds a single-use token to
+  exact evidence keys + keep/delete choice; execute consumes synchronously,
+  re-verifies per target under the lock, runs `workmux remove` with
+  **force:false always**; exit 0 still needs the postcondition; timeout/
+  truncated/other nonzero = unknown, never retried; rows continue past
+  failures), routes `POST /api/sweeps/scan|prepare|execute` (strict zod,
+  `sweep_busy` 409, `snapshot_stale` 409 reuse, fixture-mode refusal),
+  `Operations` gained typed results + `unknown` terminal state, and the
+  mobile flow `src/features/worktrees/SweepSheet.tsx` (scan → select
+  eligible → review exact targets + warnings ack → per-item progress;
+  resume via sessionStorage `sweepOperationId`; no fake cancel).
+- Why: design 2026-11-09 §4–§6. Deliberate difference from the workmux
+  TUI: `r` offers force-removal of dirty worktrees after one prompt; the
+  web sweep has **no force path at all** — the network boundary is the
+  security boundary, so every removal is evidence-backed, confirmed, and
+  ambiguous outcomes are disclosed as unknown rather than guessed either
+  way (INV-01/02/03/06/08 extensions documented in SPEC).
+- Verification delta: +91 vitest (474 total): sweep-policy 18, target-locks
+  4, operations 3, sweep-git 18 (bare-remote harness), workmux argv +2,
+  sweep service 26, sweep routes 10, SweepSheet 7. New
+  `integration/sweep.integration.test.ts` (3 native proofs on real
+  workmux 0.1.281 + tmux: clean remove keeps branch, dirty refusal without
+  force, branch deletion when not kept); moved to dedicated socket
+  `wmhttp-sweep-it` after finding a socket collision with
+  tmux.integration (parallel files killed each other's server).
+  `e2e/sweep.spec.ts` +4 (43 total): intercepted scan→select→review→
+  confirm mixed results, stale rejection, resume, plus a live proof the
+  fixture server refuses sweep mutations (400, defense in depth).
+  Live read-only smoke: ghost scan → 404 target_not_found, unknown scanId
+  → 409 snapshot_stale, bad token → 409 confirmation_required. Gate:
+  typecheck + 474 vitest + build + 43 e2e green. External-writer race
+  limitation retained (locks cover web mutations only).
+
+### 2026-11-10 (fix): CI GraphQL query was invalid against GitHub's schema
+
+- What changed: the phase-1 `statusCheckRollup` query was malformed —
+  missing the closing brace of `query {` (GitHub: `Expected NAME, actual:
+  (none) ("") at [1, 444]`) and it passed `first`/`after` to
+  `statusCheckRollup`, which accepts no arguments (the paged connection is
+  `contexts`, items under `contexts.nodes`). Rewritten per live
+  introspection: `statusCheckRollup { contexts(first,after) { nodes {
+  CheckRun|StatusContext } pageInfo } }`; response schema + reader follow
+  (`rollup.contexts.nodes`, `rollup.contexts.pageInfo`).
+- Why: live dashboard on a GitHub-backed repo surfaced the gh syntax error
+  (CI rendered unknown — honest degradation worked; the query never
+  succeeded). Mocked gh output in unit tests could not catch query syntax;
+  added a structural regression test (balanced braces + args placement)
+  and verified the exact query live against the public repo (valid parse;
+  `object:null` for unpushed HEAD → unknown, `rollup:null` for
+  check-less pushed commit → none).
+- Verification delta: +1 vitest (475 total); github adapter suite 19
+  green; fixtures reshaped to `contexts.nodes`.

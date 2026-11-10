@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentView, OperationView, PreparedAction } from '@shared/types'
+import type { AgentView, GithubStatus, OperationView, PreparedAction } from '@shared/types'
 import { api, ApiError, newRequestId } from '../../lib/api'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { PrCiStatus } from '../../components/PrCiStatus'
 import { StatusBadge } from '../../components/StatusBadge'
 import { humanizeElapsed } from './agentSort'
 
@@ -22,12 +23,14 @@ async function pollOperation(id: string, cancelled: () => boolean): Promise<Oper
 
 export function AgentCard({
   agent,
+  github,
   hotkey,
   selected,
   onOpen,
   onOpenTerminal,
 }: {
   agent: AgentView
+  github?: GithubStatus
   hotkey?: number
   selected: boolean
   onOpen: (id: string) => void
@@ -141,6 +144,11 @@ export function AgentCard({
         </div>
         {agent.title && <p className="mt-1.5 line-clamp-2 text-xs text-fg-muted">{agent.title}</p>}
       </button>
+      {github !== undefined && (
+        <div className="px-2 pt-1.5">
+          <PrCiStatus status={github} />
+        </div>
+      )}
       <div className="flex items-center justify-end gap-1 border-t border-line px-2 py-1">
         {note && (
           <span

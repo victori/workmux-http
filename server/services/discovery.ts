@@ -1,11 +1,14 @@
 import { access, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentStatus, AgentView, DashboardSnapshot, GitInfo, ProjectInfo, SourceState, WorktreeView } from '../../shared/types.js'
+import type { AgentStatus, AgentView, DashboardSnapshot, GithubStatus, GitInfo, ProjectInfo, SourceState, WorktreeView } from '../../shared/types.js'
 import type { AppConfig } from '../config.js'
 import { BOUNDS } from '../config.js'
 import type { TmuxLike, TmuxPane } from '../adapters/tmux.js'
 import { DependencyError, type AgentRecord, type WorkmuxLike, type WorktreeRecord } from '../adapters/workmux.js'
 import * as git from '../adapters/git.js'
+import type { GithubResolveResult } from '../adapters/git.js'
+import type { GithubRequest } from '../adapters/github.js'
+import type { GithubStatusService } from './github-status.js'
 import { worktreeId } from '../targets.js'
 
 const KNOWN_STATUSES: Record<string, true> = { working: true, waiting: true, done: true }
@@ -31,15 +34,18 @@ export class Discovery {
   private cache: DashboardSnapshot | null = null
   private inflight: Promise<DashboardSnapshot> | null = null
   private gitCache = new Map<string, CacheEntry<GitInfo | null>>()
-  private prCache = new Map<string, CacheEntry<string | null>>()
-  private ghAvailable: boolean | null = null
+  private identityCache = new Map<string, CacheEntry<{ result: GithubResolveResult; branch: string } | null>>()
   private lastGood: LastGood = {}
+  private readonly githubSvc: GithubStatusService | null
 
   constructor(
     private readonly cfg: AppConfig,
     private readonly tmux: TmuxLike,
     private readonly workmux: WorkmuxLike,
-  ) {}
+    github: GithubStatusService | null = null,
+  ) {
+    this.githubSvc = github
+  }
 
   snapshot(force = false): Promise<DashboardSnapshot> {
     if (!force && this.cache && Date.now() - this.cache.observedAt < BOUNDS.coreTtlMs) {
@@ -197,8 +203,13 @@ export class Discovery {
     }
 
     const worktreeViews: WorktreeView[] = []
+    const githubRequests: GithubRequest[] = []
+    const fixtureGithub = this.cfg.fixtureDir ? await loadFixtureGithub(this.cfg.fixtureDir) : null
     for (const w of list ?? []) {
       const id = worktreeId(w.project, w.path)
+      const gi = await this.gitInfoFor(w.path)
+      if (gi === undefined) gitDegraded = true
+      const github = this.githubFor(id, w, gi, githubRequests, fixtureGithub)
       worktreeViews.push({
         id,
         project: w.project,
@@ -214,10 +225,12 @@ export class Discovery {
           s in KNOWN_STATUSES ? (s as AgentStatus) : 'stale',
         ),
         createdAt: w.created_at,
-        prUrl: await this.prUrlFor(id, w),
-        unpushed: (await this.gitInfoFor(w.path))?.ahead ?? null,
+        prUrl: github?.state === 'ready' && github.pr ? github.pr.url : null,
+        unpushed: gi?.ahead ?? null,
+        github,
       })
     }
+    this.githubSvc?.retain(githubRequests)
 
     const anyFailed = Object.values(sources).some((s) => !s.ok)
     if (gitDegraded) sources.git = { ok: false, error: 'one or more git status calls failed', at: now }
@@ -251,6 +264,7 @@ export class Discovery {
       const st = await git.repoStatus(workdir)
       const info: GitInfo = {
         branch: st.branch,
+        headOid: /^[0-9a-f]{40}$/.test(st.oid) ? st.oid : null,
         hasStaged: st.hasStaged,
         hasUnstaged: st.hasUnstaged,
         hasUnmergedCommits: st.ahead > 0,
@@ -267,22 +281,58 @@ export class Discovery {
     }
   }
 
-  private async prUrlFor(id: string, w: WorktreeRecord): Promise<string | null> {
-    if (this.cfg.fixtureDir) return null
-    if (this.ghAvailable === null) {
-      this.ghAvailable = await git.ghAvailable()
+  /**
+   * GitHub status for one worktree: fixture data in fixture mode; otherwise
+   * a non-blocking cache view keyed on the resolved repo/branch/HEAD identity.
+   * Requests are collected for `retain` so the service prunes departed keys.
+   */
+  private githubFor(
+    id: string,
+    w: WorktreeRecord,
+    gi: GitInfo | null | undefined,
+    githubRequests: GithubRequest[],
+    fixtureGithub: Map<string, GithubStatus> | null,
+  ): GithubStatus | undefined {
+    if (this.cfg.fixtureDir) {
+      return fixtureGithub?.get(id) ?? unavailableGithub('no fixture GitHub status')
     }
-    if (!this.ghAvailable) return null
-    const cached = this.prCache.get(id)
-    if (cached && Date.now() - cached.at < BOUNDS.prTtlMs) return cached.value
-    const url = await git.prUrl(w.path, w.branch)
-    this.prCache.set(id, { at: Date.now(), value: url, failed: false })
-    return url
+    if (!this.githubSvc) return undefined
+    const branch = gi?.branch ?? w.branch
+    if (!branch || !gi?.headOid) {
+      return { state: 'unsupported', pr: null, ci: null, observedAt: null, attemptedAt: null, error: null }
+    }
+    const cached = this.identityCache.get(w.path)
+    const usable =
+      cached && !cached.failed && cached.value && Date.now() - cached.at < BOUNDS.gitTtlMs && cached.value.branch === branch
+        ? cached.value
+        : null
+    if (!usable) {
+      // Identity resolution is local git config (no network); the status
+      // appears on the next cycle once the result is cached.
+      void git
+        .resolveGithubRequest(w.path, branch, gi.headOid)
+        .then((result) => {
+          this.identityCache.set(w.path, { at: Date.now(), value: { result, branch }, failed: false })
+        })
+        .catch(() => {
+          this.identityCache.set(w.path, { at: Date.now(), value: null, failed: true })
+        })
+      return undefined
+    }
+    if (!usable.result.ok) {
+      return usable.result.reason === 'ambiguous'
+        ? unavailableGithub('GitHub remote ambiguous: multiple GitHub remotes configured')
+        : { state: 'unsupported', pr: null, ci: null, observedAt: null, attemptedAt: null, error: null }
+    }
+    const request = { ...usable.result.request, headOid: gi.headOid }
+    githubRequests.push(request)
+    return this.githubSvc.view(request)
   }
 
   /** Invalidate git-derived caches for one repo after staging/merge operations. */
   invalidateRepo(workdir: string): void {
     this.gitCache.delete(workdir)
+    this.identityCache.delete(workdir)
   }
 
   isDependencyError(err: unknown): err is DependencyError {
@@ -292,4 +342,24 @@ export class Discovery {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function unavailableGithub(error: string): GithubStatus {
+  return { state: 'unavailable', pr: null, ci: null, observedAt: null, attemptedAt: Date.now(), error }
+}
+
+/** Fixture GitHub statuses keyed by worktree id; missing file = no entries. */
+async function loadFixtureGithub(fixtureDir: string): Promise<Map<string, GithubStatus>> {
+  try {
+    const raw = JSON.parse(await readFile(path.join(fixtureDir, 'github-status.json'), 'utf8')) as Record<string, unknown>
+    const out = new Map<string, GithubStatus>()
+    for (const [id, value] of Object.entries(raw)) {
+      if (value && typeof value === 'object' && typeof (value as { state?: unknown }).state === 'string') {
+        out.set(id, value as GithubStatus)
+      }
+    }
+    return out
+  } catch {
+    return new Map()
+  }
 }

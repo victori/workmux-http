@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
@@ -96,5 +96,36 @@ describe('Workmux adapter', () => {
     const wm = new Workmux('/nonexistent/workmux-binary')
     await expect(wm.listAll()).rejects.toThrow(DependencyError)
     expect(await wm.version()).toBeNull()
+  })
+})
+
+describe('Workmux remove argv', () => {
+  function fakeWorkmuxWithLog(body: string): { bin: string; log: string } {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'wmlog-'))
+    const log = path.join(dir, 'argv.log')
+    const file = path.join(dir, 'workmux')
+    writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n${body}\n`)
+    chmodSync(file, 0o755)
+    return { bin: file, log }
+  }
+
+  test('should preserve the branch without force for a sweep removal', async () => {
+    const { bin, log } = fakeWorkmuxWithLog('echo "{}"')
+    const wm = new Workmux(bin)
+    const res = await wm.remove({ cwd: '/tmp', name: 'feat-x', keepBranch: true })
+    expect(res.code).toBe(0)
+    const argv = readFileSync(log, 'utf8').trim().split('\n')
+    expect(argv).toEqual(['remove', 'feat-x', '--keep-branch'])
+    expect(argv).not.toContain('-f')
+  })
+
+  test('should surface missing keep-branch support as a dependency failure, not force', async () => {
+    const { bin, log } = fakeWorkmuxWithLog('echo "error: unexpected argument \'--keep-branch\'" >&2; exit 2')
+    const wm = new Workmux(bin)
+    const res = await wm.remove({ cwd: '/tmp', name: 'feat-x', keepBranch: true })
+    expect(res.code).not.toBe(0)
+    expect(res.stderr).toContain('--keep-branch')
+    const argv = readFileSync(log, 'utf8')
+    expect(argv).not.toContain('-f')
   })
 })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentView } from '@shared/types'
+import type { AgentView, GithubStatus } from '@shared/types'
 import { api } from '../../lib/api'
 import { AgentCard } from './AgentCard'
 
@@ -260,5 +260,46 @@ describe('AgentCard branch display', () => {
       <AgentCard agent={agent({ git: null })} selected={false} onOpen={noop} onOpenTerminal={noop} />,
     )
     expect(screen.queryByText('main')).toBeNull()
+  })
+})
+
+describe('AgentCard GitHub status', () => {
+  it('renders PR status outside the navigation button without hijacking agent open', () => {
+    const onOpen = vi.fn()
+    const github: GithubStatus = {
+      state: 'ready',
+      pr: {
+        number: 7,
+        title: 'T',
+        url: 'https://github.com/o/r/pull/7',
+        state: 'open',
+        review: 'approved',
+        headOid: 'a'.repeat(40),
+        headRepository: 'o/r',
+        baseRepository: 'o/r',
+        baseBranch: 'main',
+      },
+      ci: {
+        state: 'passing',
+        commitOid: 'a'.repeat(40),
+        complete: true,
+        counts: { passing: 1, failing: 0, pending: 0, neutral: 0, unknown: 0 },
+        checks: [],
+      },
+      observedAt: Date.now(),
+      attemptedAt: Date.now(),
+      error: null,
+    }
+    render(<AgentCard agent={agent()} github={github} selected={false} onOpen={onOpen} onOpenTerminal={noop} />)
+    const link = screen.getByRole('link', { name: /PR #7/ })
+    expect(link.closest('button')).toBeNull()
+    fireEvent.click(link)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(screen.getByText(/CI passing/)).toBeInTheDocument()
+  })
+
+  it('omits the status row when no GitHub status is provided', () => {
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.queryByText(/PR #|No PR|GitHub/)).toBeNull()
   })
 })

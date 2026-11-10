@@ -7,6 +7,7 @@ import { AgentCard } from './AgentCard'
 import { WorktreeCard, worktreeLabel } from './WorktreeCard'
 import { FilterSheet } from './FilterSheet'
 import { ThemeSheet } from './ThemeSheet'
+import { SweepSheet } from '../worktrees/SweepSheet'
 import type { ThemeId } from '../../lib/themes'
 import { filterAgents, filterWorktrees, sortAgents, sortWorktrees } from './agentSort'
 
@@ -19,6 +20,7 @@ export interface DashboardViewProps {
   onOpenDiff: (id: string, label: string) => void
   onOpenTerminal: (id: string) => void
   onCreate: () => void
+  onRefresh: () => void
   themeId: ThemeId
   onChangeTheme: (id: ThemeId) => void
 }
@@ -48,6 +50,7 @@ export function DashboardView({
   onOpenDiff,
   onOpenTerminal,
   onCreate,
+  onRefresh,
   themeId,
   onChangeTheme,
 }: DashboardViewProps) {
@@ -57,6 +60,8 @@ export function DashboardView({
   const [query, setQuery] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [themeSheetOpen, setThemeSheetOpen] = useState(false)
+  const [sweepOpen, setSweepOpen] = useState(false)
+  const [sweepIds, setSweepIds] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const selectedIdRef = useRef<string | null>(null)
@@ -80,6 +85,7 @@ export function DashboardView({
 
   const agents = useMemo(() => snapshot?.agents ?? [], [snapshot])
   const worktrees = useMemo(() => snapshot?.worktrees ?? [], [snapshot])
+  const githubByWorktree = useMemo(() => new Map(worktrees.map((w) => [w.id, w.github])), [worktrees])
 
   const visibleAgents = useMemo(
     () => sortAgents(filterAgents(agents, { query, session: sessionFilter, hideStale }), sort),
@@ -249,6 +255,18 @@ export function DashboardView({
           >
             {SORT_LABEL[sort]}
           </button>
+          {tab === 'worktrees' && (
+            <button
+              onClick={() => {
+                setSweepIds(visibleWorktrees.map((w) => w.id))
+                setSweepOpen(true)
+              }}
+              disabled={visibleWorktrees.length === 0}
+              className="shrink-0 rounded-lg border border-line px-3 py-2 text-xs text-fg-muted disabled:opacity-40"
+            >
+              Clean sweep
+            </button>
+          )}
         </div>
 
         {(sessionFilter || hideStale) && (
@@ -295,6 +313,7 @@ export function DashboardView({
               <AgentCard
                 key={a.id}
                 agent={a}
+                github={githubByWorktree.get(a.worktreeId)}
                 hotkey={i < 9 ? i + 1 : undefined}
                 selected={a.id === selectedId}
                 onOpen={onOpenAgent}
@@ -344,6 +363,14 @@ export function DashboardView({
           sessionFilter={sessionFilter}
           onClearSessionFilter={onClearSessionFilter}
           onClose={() => setSheetOpen(false)}
+        />
+      )}
+
+      {sweepOpen && (
+        <SweepSheet
+          worktreeIds={sweepIds}
+          onClose={() => setSweepOpen(false)}
+          onChanged={onRefresh}
         />
       )}
       {themeSheetOpen && (

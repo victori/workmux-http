@@ -1,9 +1,16 @@
 import { describe, expect, test, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import type { AppConfig } from '../config.js'
 import { loadConfig } from '../config.js'
 import type { TmuxLike, TmuxPane, TmuxSession } from '../adapters/tmux.js'
 import { DependencyError, type StatusPayload, type WorkmuxLike, type WorktreeRecord } from '../adapters/workmux.js'
+import type { GithubStatus } from '../../shared/types.js'
 import { Discovery } from './discovery.js'
+import { GithubStatusService } from './github-status.js'
 import { worktreeId } from '../targets.js'
 
 const cfg: AppConfig = { ...loadConfig({}), fixtureDir: null, repos: [], staleAfterSecs: 3600 }
@@ -267,5 +274,100 @@ describe('non-agent pane filtering', () => {
     const targets = await discovery.agentTargets()
     expect(targets.has('%1')).toBe(true)
     expect(targets.has('%2')).toBe(false)
+  })
+})
+
+describe('GitHub status join', () => {
+  test('should serve fixture GitHub statuses keyed by worktree id', async () => {
+    const fx: AppConfig = { ...cfg, fixtureDir: fileURLToPath(new URL('../../fixtures', import.meta.url)) }
+    const discovery = new Discovery(fx, fakeTmux([]), fakeWorkmux([], []))
+    const snap = await discovery.snapshot()
+    const byId = new Map(snap.worktrees.map((w) => [w.id, w]))
+    const tz = byId.get('wt_b456a632633f')
+    expect(tz?.github?.state).toBe('ready')
+    expect(tz?.prUrl).toBe('https://github.com/acme/sample-app-alpha/pull/128')
+    expect(tz?.github?.ci?.state).toBe('pending')
+    // Stale last-good keeps the PR visible but the compatibility prUrl is ready-only.
+    const beta = byId.get('wt_c71e94902f0c')
+    expect(beta?.github?.state).toBe('stale')
+    expect(beta?.github?.pr?.number).toBe(42)
+    expect(beta?.prUrl).toBeNull()
+    expect(byId.get('wt_44b45f864288')?.github?.state).toBe('unavailable')
+    expect(byId.get('wt_107455a78136')?.github?.ci?.state).toBe('none')
+  })
+
+  test('should join service status without blocking the snapshot build', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-disc-'))
+    try {
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: repo })
+      writeFileSync(path.join(repo, 'f.txt'), 'x\n')
+      execFileSync('git', ['add', 'f.txt'], { cwd: repo })
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'init'], { cwd: repo })
+      const gate = Promise.withResolvers<GithubStatus>()
+      const svc = new GithubStatusService({ read: () => gate.promise })
+      const discovery = new Discovery(cfg, fakeTmux([]), fakeWorkmux([worktreeRecord('wt-a', { path: repo, branch: 'main' })], []), svc)
+      // Cycle 1: identity resolution in flight; nothing rendered yet.
+      const first = await discovery.snapshot()
+      expect(first.worktrees[0]?.github).toBeUndefined()
+      // Once identity is cached, the provider call is scheduled non-blocking.
+      await vi.waitFor(async () => {
+        const snap = await discovery.snapshot(true)
+        expect(snap.worktrees[0]?.github?.state).toBe('loading')
+      })
+      gate.resolve({
+        state: 'ready',
+        pr: {
+          number: 9,
+          title: 'T',
+          url: 'https://github.com/acme/widgets/pull/9',
+          state: 'open',
+          review: 'review_required',
+          headOid: 'd'.repeat(40),
+          headRepository: 'acme/widgets',
+          baseRepository: 'acme/widgets',
+          baseBranch: 'main',
+        },
+        ci: null,
+        observedAt: Date.now(),
+        attemptedAt: Date.now(),
+        error: null,
+      })
+      await vi.waitFor(async () => {
+        const snap = await discovery.snapshot(true)
+        expect(snap.worktrees[0]?.github?.state).toBe('ready')
+      })
+      const third = await discovery.snapshot(true)
+      expect(third.worktrees[0]?.prUrl).toBe('https://github.com/acme/widgets/pull/9')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('should mark non-GitHub worktrees unsupported without any provider call', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-disc2-'))
+    try {
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+      execFileSync('git', ['remote', 'add', 'origin', 'https://gitea.example.com/acme/widgets.git'], { cwd: repo })
+      writeFileSync(path.join(repo, 'f.txt'), 'x\n')
+      execFileSync('git', ['add', 'f.txt'], { cwd: repo })
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'init'], { cwd: repo })
+      let reads = 0
+      const svc = new GithubStatusService({
+        read: async () => {
+          reads += 1
+          throw new Error('must not be called')
+        },
+      })
+      const discovery = new Discovery(cfg, fakeTmux([]), fakeWorkmux([worktreeRecord('wt-a', { path: repo, branch: 'main' })], []), svc)
+      await discovery.snapshot()
+      await vi.waitFor(async () => {
+        const snap = await discovery.snapshot(true)
+        expect(snap.worktrees[0]?.github?.state).toBe('unsupported')
+      })
+      expect(reads).toBe(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })

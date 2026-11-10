@@ -3,6 +3,7 @@ import { run } from '../exec.js'
 import { BOUNDS } from '../config.js'
 import { parseDiff, type ParsedFile } from '../hunks.js'
 import type { CommitInfo, CommitListResponse } from '../../shared/types.js'
+import type { GithubRequest } from './github.js'
 
 export interface RepoStatus {
   branch: string | null
@@ -311,20 +312,74 @@ async function readWorkmuxBase(cwd: string): Promise<string | null> {
   return null
 }
 
-/** gh CLI present on PATH. */
-export async function ghAvailable(): Promise<boolean> {
-  const res = await run(['gh', '--version']).catch(() => null)
-  return res !== null && res.code === 0
+/** GitHub owner/repo from HTTPS, scp-style SSH, or ssh:// URLs; null otherwise. */
+export function parseGithubUrl(url: string): { owner: string; repo: string } | null {
+  const u = url.trim().replace(/\.git$/, '')
+  if (!u || u.startsWith('-') || u.startsWith('ext::') || u.startsWith('file://')) return null
+  const https = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(u)
+  if (https) return { owner: https[1]!, repo: https[2]! }
+  const ssh = /^(?:ssh:\/\/)?(?:git@)?github\.com(?::\d+)?[/:]([^/]+)\/([^/]+)$/.exec(u)
+  if (ssh) return { owner: ssh[1]!, repo: ssh[2]! }
+  return null
 }
 
-/** PR URL via gh CLI when available; null otherwise. */
-export async function prUrl(cwd: string, branch: string): Promise<string | null> {
-  try {
-    const res = await run(['gh', 'pr', 'view', '--json', 'url', '--jq', '.url', '--head', branch], { cwd })
-    const url = res.stdout.trim()
-    return res.code === 0 && /^https?:\/\//.test(url) ? url : null
-  } catch {
-    return null
+export type GithubResolveResult =
+  | { ok: true; request: GithubRequest }
+  | { ok: false; reason: 'unsupported' | 'ambiguous'; detail: string }
+
+/**
+ * Resolve this checkout's GitHub identity from local config only (no network):
+ * head repo = GitHub tracking remote for the branch, else GitHub `origin`,
+ * else the sole GitHub remote (multiple = ambiguous). Base repo = GitHub
+ * `upstream` remote when present, else null (the provider resolves the fork
+ * parent asynchronously). Never trusts option-like remote names/branches.
+ */
+export async function resolveGithubRequest(
+  cwd: string,
+  branch: string | null,
+  headOid: string | null,
+): Promise<GithubResolveResult> {
+  if (!branch || branch.startsWith('(') || branch.startsWith('-') || !SAFE_REV.test(branch)) {
+    return { ok: false, reason: 'unsupported', detail: 'no usable branch name' }
+  }
+  if (!headOid || !/^[0-9a-f]{40}$/.test(headOid)) {
+    return { ok: false, reason: 'unsupported', detail: 'HEAD is unborn or unresolvable' }
+  }
+  const namesRes = await run(['git', 'remote'], { cwd }).catch(() => null)
+  if (!namesRes || namesRes.code !== 0) {
+    return { ok: false, reason: 'unsupported', detail: 'cannot list remotes' }
+  }
+  const names = namesRes.stdout.split('\n').map((s) => s.trim()).filter((n) => n && !n.startsWith('-'))
+  const urls = new Map<string, string>()
+  for (const name of names) {
+    const res = await run(['git', 'remote', 'get-url', name], { cwd }).catch(() => null)
+    if (res && res.code === 0) urls.set(name, res.stdout.trim())
+  }
+  const githubRemotes = new Map<string, { owner: string; repo: string }>()
+  for (const [name, url] of urls) {
+    const parsed = parseGithubUrl(url)
+    if (parsed) githubRemotes.set(name, parsed)
+  }
+  if (githubRemotes.size === 0) return { ok: false, reason: 'unsupported', detail: 'no GitHub remote' }
+
+  let head: { owner: string; repo: string } | null = null
+  const trackRes = await run(['git', 'config', '--get', `branch.${branch}.remote`], { cwd }).catch(() => null)
+  const tracking = trackRes && trackRes.code === 0 ? trackRes.stdout.trim() : ''
+  if (tracking && githubRemotes.has(tracking)) head = githubRemotes.get(tracking)!
+  else if (githubRemotes.has('origin')) head = githubRemotes.get('origin')!
+  else if (githubRemotes.size === 1) head = [...githubRemotes.values()][0]!
+  else return { ok: false, reason: 'ambiguous', detail: 'multiple GitHub remotes; set the branch tracking remote' }
+
+  const upstream = githubRemotes.get('upstream') ?? null
+  return {
+    ok: true,
+    request: {
+      worktreePath: cwd,
+      headRepository: `${head.owner}/${head.repo}`,
+      configuredBaseRepository: upstream ? `${upstream.owner}/${upstream.repo}` : null,
+      branch,
+      headOid,
+    },
   }
 }
 

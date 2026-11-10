@@ -128,9 +128,10 @@ export class Workmux implements WorkmuxLike {
     return this.exec(argv, { cwd: opts.cwd, timeoutMs: BOUNDS.mergeTimeoutMs })
   }
 
-  async remove(opts: { cwd: string; name: string; force?: boolean }): Promise<RunResult> {
+  async remove(opts: { cwd: string; name: string; force?: boolean; keepBranch?: boolean }): Promise<RunResult> {
     const argv = [this.bin, 'remove', opts.name]
     if (opts.force) argv.push('-f')
+    if (opts.keepBranch) argv.push('--keep-branch')
     return this.exec(argv, { cwd: opts.cwd })
   }
 

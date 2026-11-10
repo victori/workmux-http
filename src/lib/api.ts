@@ -16,6 +16,10 @@ import type {
   PreparedAction,
   ProjectInfo,
   OutputResponse,
+  PreparedSweep,
+  SweepExecuteRequest,
+  SweepPrepareRequest,
+  SweepScanRequest,
 } from '@shared/types'
 
 export const MUTATION_HEADER = { 'x-workmux-request': '1' }
@@ -118,6 +122,9 @@ export const api = {
   prepare: (req: PrepareActionRequest) => post<PreparedAction>('/api/actions/prepare', req),
   execute: (req: PrepareActionRequest & { confirmToken: string; requestId: string }) =>
     post<OperationView>('/api/actions/execute', req),
+  scanSweep: (req: SweepScanRequest) => post<OperationView>('/api/sweeps/scan', req),
+  prepareSweep: (req: SweepPrepareRequest) => post<PreparedSweep>('/api/sweeps/prepare', req),
+  executeSweep: (req: SweepExecuteRequest) => post<OperationView>('/api/sweeps/execute', req),
   operation: (id: string) => get<OperationView>(`/api/operations/${encodeId(id)}`),
 }
 

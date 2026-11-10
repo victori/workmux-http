@@ -22,6 +22,7 @@ import { parseDiff, buildHunkPatch, splitHunkText, type ParsedFile } from '../hu
 import { confirmTokenOf, isValidWorktreeName, snapshotId, worktreeId } from '../targets.js'
 import type { Discovery } from './discovery.js'
 import type { Operations } from './operations.js'
+import { TargetLocks } from './target-locks.js'
 
 export class BadRequestError extends Error {
   constructor(message: string) {
@@ -64,7 +65,7 @@ function pendingFrom(status: git.RepoStatus | null) {
 /** Diffs, hunk staging, creation, and confirmed destructive actions. */
 export class Management {
   private issued = new Map<string, IssuedToken>()
-  private worktreeLocks = new Map<string, Promise<unknown>>()
+  private readonly locks: TargetLocks
 
   constructor(
     private readonly cfg: AppConfig,
@@ -72,7 +73,10 @@ export class Management {
     private readonly workmux: Workmux,
     private readonly discovery: Discovery,
     private readonly operations: Operations,
-  ) {}
+    locks: TargetLocks = new TargetLocks(operations),
+  ) {
+    this.locks = locks
+  }
 
   async diff(targetId: string, mode: DiffMode, sha?: string): Promise<DiffResponse> {
     const wt = (await this.discovery.worktreeTargets()).get(targetId)
@@ -564,16 +568,7 @@ export class Management {
    * while the first client's push is still running.
    */
   private locked<T>(targetId: string, job: () => Promise<T>): Promise<T> {
-    const prev = this.worktreeLocks.get(targetId) ?? Promise.resolve()
-    const next = prev.then(job, job)
-    const held = next
-      .then((v) => {
-        const id = (v as { id?: unknown } | null | undefined)?.id
-        return typeof id === 'string' ? this.operations.settled(id) : undefined
-      })
-      .catch(() => undefined)
-    this.worktreeLocks.set(targetId, held)
-    return next
+    return this.locks.run(targetId, job)
   }
 
   private pruneTokens(): void {

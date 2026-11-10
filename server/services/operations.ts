@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { OperationView } from '../../shared/types.js'
+import type { OperationResult, OperationView } from '../../shared/types.js'
 
 /**
  * Long-running management actions run server-side; disconnecting the
@@ -7,11 +7,28 @@ import type { OperationView } from '../../shared/types.js'
  */
 const MAX_FINISHED_OPS = 100
 
+/** Callback outcome: `state` defaults to done/failed from `error`; `result`
+ * carries structured payloads (e.g. per-item sweep progress). */
+export interface OperationOutcome {
+  output: string | null
+  error?: string
+  result?: OperationResult
+  state?: 'done' | 'failed' | 'unknown'
+}
+
+function snapshotResult(result: OperationResult): OperationResult {
+  return result.type === 'sweep' ? { ...result, items: result.items.map((item) => ({ ...item })) } : { ...result }
+}
+
 export class Operations {
   private ops = new Map<string, OperationView>()
   private done = new Map<string, Promise<void>>()
 
-  start(kind: string, target: string, fn: () => Promise<{ output: string | null; error?: string }>): OperationView {
+  start(
+    kind: string,
+    target: string,
+    fn: (report: (result: OperationResult) => void) => Promise<OperationOutcome>,
+  ): OperationView {
     const id = randomUUID()
     const view: OperationView = {
       id,
@@ -25,11 +42,15 @@ export class Operations {
     }
     this.ops.set(id, view)
     this.evict()
-    const settled = fn()
-      .then(({ output, error }) => {
-        view.state = error ? 'failed' : 'done'
+    const report = (result: OperationResult): void => {
+      view.result = snapshotResult(result)
+    }
+    const settled = fn(report)
+      .then(({ output, error, result, state }) => {
+        view.state = state ?? (error ? 'failed' : 'done')
         view.output = output
         view.error = error ?? null
+        if (result) view.result = snapshotResult(result)
       })
       .catch((err: unknown) => {
         view.state = 'failed'

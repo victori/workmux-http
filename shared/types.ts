@@ -18,6 +18,8 @@ export interface GitInfo {
   behind: number | null
   /** Distinct files with pending changes (untracked+staged+unstaged+conflicts). */
   pendingChanges?: number | null
+  /** HEAD oid from porcelain branch.oid; null when unborn/unresolvable. */
+  headOid?: string | null
   unavailable?: undefined
 }
 
@@ -55,8 +57,47 @@ export interface WorktreeView {
   agentStatuses: AgentStatus[]
   createdAt: number
   prUrl: string | null
+  /** GitHub PR/CI enrichment for this worktree; absent = never attempted. */
+  github?: GithubStatus
   /** Unpushed commit count (ahead of upstream or origin/<branch>). Null = unknown / no git info. */
   unpushed: number | null
+}
+
+export type CiState = 'none' | 'pending' | 'passing' | 'failing' | 'neutral' | 'unknown'
+
+export interface CiSummary {
+  state: CiState
+  commitOid: string
+  /** False when pagination was exhausted or data was partial. */
+  complete: boolean
+  counts: { passing: number; failing: number; pending: number; neutral: number; unknown: number }
+  checks: Array<{ name: string; state: CiState; url: string | null }>
+}
+
+export interface PullRequestInfo {
+  number: number
+  title: string
+  url: string
+  state: 'open' | 'draft' | 'merged' | 'closed'
+  review: 'approved' | 'changes_requested' | 'review_required' | 'unknown'
+  headOid: string
+  headRepository: string
+  baseRepository: string
+  baseBranch: string
+}
+
+/**
+ * GitHub PR/CI view. `ready` + `pr: null` = a complete successful query
+ * found no matching PR; `unavailable`/`stale`/`unsupported` are never
+ * evidence of absence or passing CI.
+ */
+export interface GithubStatus {
+  state: 'loading' | 'ready' | 'stale' | 'unavailable' | 'unsupported'
+  pr: PullRequestInfo | null
+  ci: CiSummary | null
+  observedAt: number | null
+  attemptedAt: number | null
+  error: string | null
 }
 
 export interface DashboardSnapshot {
@@ -279,6 +320,8 @@ export interface OperationView {
   state: 'running' | 'done' | 'failed' | 'unknown'
   output: string | null
   error: string | null
+  /** Structured outcome for kinds that produce one (sweep, sweep_scan). */
+  result?: OperationResult
   startedAt: number
   endedAt: number | null
 }
@@ -289,6 +332,64 @@ export interface CreateWorktreeRequest {
   prompt?: string
   agent?: string
   baseBranch?: string
+  requestId: string
+}
+
+export type SweepReason = 'pr_merged' | 'pr_closed' | 'upstream_gone' | 'merged_locally'
+
+export interface SweepCandidate {
+  worktreeId: string
+  targetLabel: string
+  branch: string
+  path: string
+  /** Null when blockers prevent any cleanup reason. */
+  reason: SweepReason | null
+  blockers: string[]
+  warnings: string[]
+}
+
+/** Typed scan result carried by a completed sweep_scan operation. */
+export interface SweepScan {
+  type: 'sweep_scan'
+  candidates: SweepCandidate[]
+  expiresAt: number
+}
+
+export interface SweepItem {
+  worktreeId: string
+  targetLabel: string
+  state: 'pending' | 'running' | 'removed' | 'skipped' | 'failed' | 'unknown'
+  message: string | null
+}
+
+/** Typed per-item outcome carried by a completed sweep operation. */
+export interface SweepResult { type: 'sweep'; items: SweepItem[] }
+
+export type OperationResult = SweepScan | SweepResult
+
+export interface SweepScanRequest {
+  worktreeIds: string[]
+  requestId: string
+}
+
+export interface SweepPrepareRequest {
+  scanId: string
+  worktreeIds: string[]
+  keepBranches: boolean
+  requestId: string
+}
+
+export interface PreparedSweep {
+  confirmToken: string
+  expiresAt: number
+  targets: SweepCandidate[]
+  keepBranches: boolean
+  warnings: string[]
+}
+
+export interface SweepExecuteRequest {
+  confirmToken: string
+  acceptWarnings: boolean
   requestId: string
 }
 

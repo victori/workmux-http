@@ -1,9 +1,9 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { addPaths, commitDiff, commitInfo, commitList, hasOrigin, push, repoStatus, runCommit, unstagePaths, unpushedCommits } from './git.js'
+import { addPaths, commitDiff, commitInfo, commitList, hasOrigin, push, repoStatus, resolveGithubRequest, runCommit, unstagePaths, unpushedCommits } from './git.js'
 
 /**
  * Real-git checks for status parsing, path staging, and the commit runner,
@@ -474,5 +474,93 @@ describe('unpushed fallback without configured upstream', () => {
     const s = await repoStatus(cloneDir)
     expect(s.upstreamAssumed).toBe(true)
     expect(s.ahead).toBe(0)
+  })
+})
+
+describe('resolveGithubRequest', () => {
+  let idRepo: string
+  const gitId = (args: string[]): string => execFileSync('git', args, { cwd: idRepo, encoding: 'utf8' })
+  const HEAD_OID = 'c'.repeat(40)
+
+  beforeEach(() => {
+    idRepo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-ghid-'))
+    gitId(['init', '-q', '-b', 'main'])
+  })
+  afterEach(() => {
+    rmSync(idRepo, { recursive: true, force: true })
+  })
+
+  test('should prefer a GitHub tracking remote over a Gitea origin', async () => {
+    gitId(['remote', 'add', 'origin', 'https://gitea.example.com/acme/widgets.git'])
+    gitId(['remote', 'add', 'github', 'git@github.com:acme/widgets.git'])
+    gitId(['config', 'branch.main.remote', 'github'])
+    const res = await resolveGithubRequest(idRepo, 'main', HEAD_OID)
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      expect(res.request.headRepository).toBe('acme/widgets')
+      expect(res.request.configuredBaseRepository).toBeNull()
+    }
+  })
+
+  test('should fall back to GitHub origin when no tracking remote', async () => {
+    gitId(['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'])
+    const res = await resolveGithubRequest(idRepo, 'feat/x', HEAD_OID)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.request.headRepository).toBe('acme/widgets')
+  })
+
+  test('should resolve the sole GitHub remote with a non-GitHub origin', async () => {
+    gitId(['remote', 'add', 'origin', 'https://gitea.example.com/acme/widgets.git'])
+    gitId(['remote', 'add', 'upstream', 'ssh://git@github.com:22/upstream-org/widgets'])
+    const res = await resolveGithubRequest(idRepo, 'feat/x', HEAD_OID)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.request.headRepository).toBe('upstream-org/widgets')
+  })
+
+  test('should record a GitHub upstream as the configured base', async () => {
+    gitId(['remote', 'add', 'origin', 'git@github.com:me/widgets.git'])
+    gitId(['remote', 'add', 'upstream', 'https://github.com/upstream-org/widgets.git'])
+    const res = await resolveGithubRequest(idRepo, 'feat/x', HEAD_OID)
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      expect(res.request.headRepository).toBe('me/widgets')
+      expect(res.request.configuredBaseRepository).toBe('upstream-org/widgets')
+    }
+  })
+
+  test('should be ambiguous with multiple GitHub remotes and no tracking', async () => {
+    gitId(['remote', 'add', 'a', 'git@github.com:acme/one.git'])
+    gitId(['remote', 'add', 'b', 'git@github.com:acme/two.git'])
+    const res = await resolveGithubRequest(idRepo, 'feat/x', HEAD_OID)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.reason).toBe('ambiguous')
+  })
+
+  test('should reject hostile branch names and missing HEAD oids', async () => {
+    gitId(['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'])
+    const hostile = await resolveGithubRequest(idRepo, '--upload-pack=evil', HEAD_OID)
+    expect(hostile.ok).toBe(false)
+    const unborn = await resolveGithubRequest(idRepo, 'main', null)
+    expect(unborn.ok).toBe(false)
+    if (!unborn.ok) expect(unborn.reason).toBe('unsupported')
+  })
+
+  test('should report unsupported for non-GitHub hosts only', async () => {
+    gitId(['remote', 'add', 'origin', 'https://gitea.example.com/acme/widgets.git'])
+    const res = await resolveGithubRequest(idRepo, 'main', HEAD_OID)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.reason).toBe('unsupported')
+  })
+
+  test('should parse scp-style and ssh:// GitHub urls', async () => {
+    gitId(['remote', 'add', 'origin', 'git@github.com:acme/widgets.git'])
+    const scp = await resolveGithubRequest(idRepo, 'main', HEAD_OID)
+    expect(scp.ok && scp.request.headRepository).toBe('acme/widgets')
+    rmSync(idRepo, { recursive: true, force: true })
+    idRepo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-ghid-'))
+    gitId(['init', '-q', '-b', 'main'])
+    gitId(['remote', 'add', 'origin', 'ssh://git@github.com/acme/widgets.git'])
+    const ssh = await resolveGithubRequest(idRepo, 'main', HEAD_OID)
+    expect(ssh.ok && ssh.request.headRepository).toBe('acme/widgets')
   })
 })

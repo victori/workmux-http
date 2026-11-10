@@ -69,6 +69,24 @@ function worktree(over: Partial<WorktreeView> & { id: string }): WorktreeView {
     createdAt: 0,
     unpushed: null,
     prUrl: 'https://github.com/o/r/pull/1',
+    github: {
+      state: 'ready',
+      pr: {
+        number: 1,
+        title: 'Demo',
+        url: 'https://github.com/o/r/pull/1',
+        state: 'open',
+        review: 'review_required',
+        headOid: 'a'.repeat(40),
+        headRepository: 'o/r',
+        baseRepository: 'o/r',
+        baseBranch: 'main',
+      },
+      ci: null,
+      observedAt: Date.now(),
+      attemptedAt: Date.now(),
+      error: null,
+    },
     ...over,
   }
 }
@@ -98,6 +116,7 @@ function renderView(snap: DashboardSnapshot | null) {
       onOpenDiff={vi.fn()}
       onOpenTerminal={vi.fn()}
       onCreate={vi.fn()}
+      onRefresh={vi.fn()}
       themeId="night"
       onChangeTheme={vi.fn()}
     />,

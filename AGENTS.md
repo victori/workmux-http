@@ -40,16 +40,16 @@ HTTP/WS → preHandler checkRequest (host allowlist, port-exact origin,
 Error → HTTP codes: 400 `invalid_request` · 403 `forbidden_host`/
 `cross_origin`/`missing_request_header` · 404 `target_not_managed`/
 `target_not_found` · 409 `confirmation_required`/`snapshot_stale`/
-`ambiguous_agent` · 410 `target_gone` · 502 `delivery_unknown`/
-`dependency_error` · 202 for create/execute.
+`sweep_busy`/`ambiguous_agent` · 410 `target_gone` · 502 `delivery_unknown`/
+`dependency_error` · 202 for create/execute/sweep scan+execute.
 
 ## Key Directories
 
 | Path | Purpose |
 | --- | --- |
 | `server/` | Fastify backend (`index`, `config`, `security`, `exec`, `targets`, `hunks`) |
-| `server/adapters/` | `tmux.ts` `workmux.ts` `git.ts` process boundaries |
-| `server/services/` | `discovery` `input` `management` `operations` `terminal` |
+| `server/adapters/` | `tmux.ts` `workmux.ts` `git.ts` `github.ts` `sweep-git.ts` process boundaries |
+| `server/services/` | `discovery` `input` `management` `operations` `terminal` `github-status` `target-locks` `sweep-policy` `sweep` |
 | `shared/types.ts` | API contracts shared by backend and frontend |
 | `src/` | React SPA: `App.tsx` (router/state), `features/{dashboard,agent,worktrees,terminal,palette}`, `components/`, `hooks/`, `lib/{api,storage}.ts` |
 | `fixtures/` | Fixture-mode payloads (`list-all.json`, `status-all.json`, `output-<paneId>.txt`) — tracked; e2e depends on them |
@@ -250,7 +250,7 @@ and review the diff for undocumented behavior changes.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  337 tests green baseline.
+  475 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add
@@ -259,8 +259,10 @@ and review the diff for undocumented behavior changes.
   `vi.mock('../../lib/api')` with full `api` object + `ApiError` class;
   harnesses: `fakeWorkmux` (single-body shell script),
   `fakeTmuxWithLog` (call log + `gate` promise for concurrency), real-git
-  temp repos (`commit.gpgsign false`), real-tmux on a disposable socket
-  named `wmhttp-itest` (`describe.skipIf` when tmux absent).
+  temp repos (`commit.gpgsign false`), real-tmux on disposable sockets —
+  `wmhttp-itest` (tmux) and `wmhttp-sweep-it` (sweep; separate sockets,
+  parallel spec files must never share one) (`describe.skipIf` when tmux
+  absent).
 - **Playwright** e2e: iPhone 13 viewport (chromium), fixture-mode server on
   :4173 (`WORKMUX_HTTP_FIXTURES=$PWD/fixtures`); fixture pane ids are
   double-encoded in spec URLs (`%25287`).
