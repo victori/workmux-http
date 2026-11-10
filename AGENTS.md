@@ -155,8 +155,9 @@ it the default in code or docs.
 - `src/lib/api.ts` — typed API client, `MUTATION_HEADER`, `encodeId`
 - `vite.config.ts` / `vitest.config.ts` / `playwright.config.ts` — toolchain
 - `README.md` — user-facing startup, env table, VPN model, TUI parity
+- `docs/README.md` — documentation index, lifecycle, and historical records
 - `docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md` —
-  canonical initial spec + `## Amendments` trail
+  historical scaffold design/plan + amendments through the documentation transition
 
 ## Specification deltas
 
@@ -175,7 +176,8 @@ a material decision outside that scope.
 Update documentation in the same change:
 
 - `docs/SPEC.md` for current behavior, contracts, and state machines.
-- The canonical plan's Amendments section for the decision and rationale.
+- The relevant feature design/plan for decisions, deviations, and verification;
+  `docs/decisions/` for lasting decisions spanning features.
 - `README.md` when setup or user-visible behavior changes.
 - `AGENTS.md` only when development conventions change.
 
@@ -214,23 +216,61 @@ and review the diff for undocumented behavior changes.
 - Precedence on conflict: code and tests establish observed behavior.
   User-approved requirements establish intended behavior. A conflict is a
   finding to resolve, not permission to rewrite the requirement.
-  For conflicting documents: SPEC.md > latest canonical amendment >
-  AGENTS.md conventions > README.md > dated feature plans. This hierarchy
-  does not override explicit user requirements.
-- The plan in `docs/superpowers/plans/` is the canonical decision trail.
-  Any feature added or behavior changed after the plan MUST update that
-  document in the same change — do not leave the spec stale.
-- Append to the `## Amendments` section (create it if absent) with the date
-  and: what changed, why (e.g. upstream evidence, security review finding),
-  and the verification delta (new test counts, new live proofs).
-- NEVER rewrite the original criteria text; amendments are additive so the
-  decision trail stays auditable. If an amendment supersedes an original
-  criterion, say so explicitly in the entry.
-- Amendments that change user-visible behavior or env vars also update
+  For conflicting current-behavior documents: SPEC.md takes precedence;
+  approved proposals describe intended changes, not implemented behavior.
+  AGENTS.md governs development conventions; README.md covers usage.
+  Historical plans/amendments explain past decisions. A later decision
+  supersedes an earlier one only when it explicitly links and says so.
+  None of these documents overrides explicit user requirements.
+- Record what changed, why, and dated verification evidence/limits in the
+  relevant feature design/plan in the same change. For small fixes without
+  a plan, use a dated amendment in the related feature document; create a
+  short feature record if none exists. Use `docs/decisions/` for lasting
+  decisions spanning features, not a duplicate record for every change.
+- The initial dashboard plan and its old amendments remain historical.
+  The 2026-11-10 documentation transition ends the requirement to append
+  every future change there. Follow the relevant feature's decision trail.
+- NEVER rewrite original criteria to match implementation. Add dated
+  deviations or superseding decisions with links; preserve historical evidence.
+- Changes to user-visible behavior or env vars also update
   `README.md`; convention-level facts update this file.
 - Backup rule applies to any file not tracked by version control: create a
   timestamped `.bak` of the original before editing. Check tracking status
   rather than assuming plan docs are untracked.
+
+## Documentation organization and lifecycle
+
+- `docs/README.md` indexes designs, plans, decisions, and audits. Update it
+  when adding, moving, superseding, or closing a document.
+- Save all new designs to
+  `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and all new plans to
+  `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`, regardless of which agent
+  or skill writes them. Never place dated plans directly in `docs/`.
+  Keep existing filenames stable within those directories.
+- Save audits to `docs/audits/YYYY-MM-DD-<topic>.md`; save significant
+  lasting decisions to `docs/decisions/YYYY-MM-DD-<topic>.md`.
+  Screenshots stay in `docs/screenshots/`.
+- New designs/plans include Date, Status, related design/plan links,
+  affected SPEC sections and INV-* IDs (or “none” with a reason), and
+  Verification (pending until evidence exists). Status is one of `draft`,
+  `approved`, `in-progress`, `implemented`, `superseded`, or `abandoned`.
+  Record approval only when actually given; partial delivery stays
+  `in-progress` with completed and remaining scope stated explicitly.
+- Before implementation, designs describe proposed behavior, failure cases,
+  and acceptance criteria; plans link the design and define tasks/tests.
+  Small fixes may keep design and plan in one short record. Do not split
+  legacy combined documents or invent missing historical approvals.
+- During implementation, update current-state SPEC alongside code/tests.
+  At completion, reconcile design/plan status and the index, record dated
+  verification and deviations, and link current SPEC. Do not mechanically
+  check historical task boxes without evidence for each task.
+- Preserve completed records in place. Superseding documents link both
+  directions; do not move completed plans into another archive directory.
+- Use relative Markdown links for navigation and repair inbound references
+  when moving files. Repository-relative code paths may remain in backticks.
+- Superpowers is opt-in. These locations apply whether it is used or not;
+  its templates do not override repository instructions, including no
+  automatic commits or pushes.
 
 ## Runtime/Tooling Preferences
 

@@ -8,9 +8,17 @@
 
 **Tech Stack:** Node ≥22, TypeScript 5.9, Fastify 5, zod 4, React 19, Tailwind 4, Vitest 5, Playwright, local `gh`/`git`/`workmux`/`tmux`.
 
-**Spec:** `docs/superpowers/specs/2026-11-09-pr-ci-status-and-clean-sweep-design.md` (proposed feature design); `docs/SPEC.md` (current baseline).
+**Spec:** [feature design](../specs/2026-11-09-pr-ci-status-and-clean-sweep-design.md);
+[current-state specification](../../SPEC.md).
 
-**Status:** Planning only. Review the proposed safety defaults before execution. No code, running service, credentials, worktrees, branches, or remotes are changed by this plan.
+**Status:** implemented (both phases, 2026-11-09); status reconciled 2026-11-10.
+**Verification:** historical phase completion and gate results are recorded in
+the [scaffold amendments](2026-11-07-workmux-http-dashboard.md), under the
+2026-11-09 phase entries. The 2026-11-10 CI GraphQL fix is recorded there too.
+Original task checkboxes below are retained as planning history, not a fresh
+task-by-task verification report or authorization to operate on live worktrees.
+Current documentation workflow follows [AGENTS.md](../../../AGENTS.md);
+instructions below to append to the scaffold plan describe the old workflow.
 
 ## Global Constraints
 

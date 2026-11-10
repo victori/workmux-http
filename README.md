@@ -299,9 +299,10 @@ protection).
 
 ## Architecture
 
-- `docs/SPEC.md` is the current-state specification (endpoints, security
-  gates, invariants, state machines, env vars) — start there; the
-  `docs/superpowers/plans/` trail explains why each decision was made.
+- [Current-state specification](docs/SPEC.md): endpoints, security gates,
+  invariants, state machines, and env vars.
+- [Documentation index](docs/README.md): feature designs and implementation
+  plans, their status, lasting decisions, and historical audits.
 
 ```
 server/index.ts        routes (fastify), SPA fallback, WS /api/terminal

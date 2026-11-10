@@ -1,9 +1,13 @@
-# PR/CI Status and Clean Sweep — Proposed Design
+# PR/CI Status and Clean Sweep — Design
 
 **Date:** 2026-11-09
-**Status:** Proposed for review; not an implemented contract or approval to delete anything.
+**Status:** implemented (both phases, 2026-11-09); status reconciled 2026-11-10.
 **Baseline:** `docs/SPEC.md`; workmux 0.1.281, tag `v0.1.281`.
-**Implementation plan:** `../plans/2026-11-09-pr-ci-status-and-clean-sweep.md`.
+**Implementation plan:** [PR/CI status and clean sweep](../plans/2026-11-09-pr-ci-status-and-clean-sweep.md).
+**Verification:** historical phase completion and gate results are recorded in
+the [scaffold amendments](../plans/2026-11-07-workmux-http-dashboard.md), including
+the subsequent CI GraphQL fix. This preserves the original design; current
+contracts live in [SPEC.md](../../SPEC.md). It is not approval to delete anything.
 
 ## 1. Specification delta
 
@@ -28,8 +32,9 @@
 This is an architectural change delivered in two independently verifiable
 phases: PR/CI visibility first, sweep second. Sweep consumes the first phase's
 provider identity and fresh PR evidence; it must not implement another PR lookup.
-Only planning documents change now. Update current-state SPEC, README, and the
-canonical plan's Amendments when each implementation phase actually lands.
+At design time only planning documents changed; phase completion was later
+recorded in SPEC, README, and the scaffold amendments. Future documentation
+updates follow [AGENTS.md](../../../AGENTS.md).
 
 ## 2. Alternatives and recommendation
 

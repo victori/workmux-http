@@ -1,5 +1,11 @@
 # Workmux HTTP Dashboard Implementation Plan
 
+**Status:** implemented; historical combined design/plan. Original criteria
+and subsequent amendments are preserved below. Current behavior lives in
+[SPEC.md](../../SPEC.md); the [documentation index](../../README.md) tracks
+feature records. The final 2026-11-10 documentation amendment ends the rule
+that every future change must append to this file.
+
 > For agentic workers: Use `superpowers:executing-plans` to implement this plan task by task. Do not implement until the user requests implementation.
 
 **Goal:** Build an iPhone-first native React dashboard that discovers and operates existing workmux sessions, with iPad support as the secondary layout target.
@@ -321,7 +327,7 @@ original requirements above remain in force unless noted.
   typecheck + build clean. Visual screenshot pass captured per theme;
   contrast verified numerically (image inspection unavailable).
 
-### Reader/Terminal modes (2026-11-07, plan `docs/2026-11-07-reader-terminal-modes.md`)
+### Reader/Terminal modes (2026-11-07, plan `docs/superpowers/plans/2026-11-07-reader-terminal-modes-plan.md`)
 - Agent detail is now one target with two explicit modes (Reader / Terminal)
   owned by the App route (`{view:'agent', mode}`); the old separate
   `{view:'terminal'}` route is removed. Reader stays mounted while Terminal
@@ -370,7 +376,7 @@ original requirements above remain in force unless noted.
   keyboard behaviors are unit/e2e-proven only in Chromium emulation —
   real-device spot-check still recommended.
 
-### Pending changes + configurable commit (2026-11-07, plan `docs/2026-11-07-untracked-commit-plan.md`)
+### Pending changes + configurable commit (2026-11-07, plan `docs/superpowers/plans/2026-11-07-untracked-commit-plan.md`)
 - Diff view (WIP) now lists pending changes: untracked AND unstaged tracked
   files (porcelain v2 parse extended with per-entry paths; also fixed a
   latent XY-offset bug where `hasStaged` was always true) plus conflicts,
@@ -438,7 +444,7 @@ original requirements above remain in force unless noted.
   vitest; live injection proof inert (payload with `"; touch …; echo "`
   arrived byte-identical, no side effects).
 
-### Push button + unpushed indicator (2026-11-07, plan `docs/2026-11-07-push-button-plan.md`)
+### Push button + unpushed indicator (2026-11-07, plan `docs/superpowers/plans/2026-11-07-push-button-plan.md`)
 - Agent cards badge `↑N` (unpushed = ahead of upstream; hidden when 0/null,
   never fabricated) + Push button; worktree cards badge only.
 - Review-before-approve: `PreparedAction.commits` (sha+subject, cap 20,
@@ -493,7 +499,7 @@ original requirements above remain in force unless noted.
   +1 management integration (wrapper script logs argv + pushes a new
   branch to the local bare remote) = 233 vitest.
 
-### Pending-changes badge (2026-11-07, plan `docs/2026-11-07-pending-changes-badge-plan.md`)
+### Pending-changes badge (2026-11-07, plan `docs/superpowers/plans/2026-11-07-pending-changes-badge-plan.md`)
 - Agent cards show `●N` (N files pending commit = distinct porcelain v2
   file entries: untracked + staged + unstaged + conflicts; `MM` counts
   once), warn-colored pill left of `↑N`; hidden at 0/null, never fabricated.
@@ -555,7 +561,7 @@ original requirements above remain in force unless noted.
 - +4 tests (disabled-when-clean, staged-only, degraded fail-open, server
   reject) = 247 vitest; live diff carries pendingKnown.
 
-### Audit remediation round 1 — F01 F06 F08 F12 (2026-11-08, audit `docs/2026-11-08-project-audit.md`)
+### Audit remediation round 1 — F01 F06 F08 F12 (2026-11-08, audit `docs/audits/2026-11-08-project-audit.md`)
 - F01 (P1, reproduced): percent-encoded paths (`/%61pi/...`) routed into API
   handlers while the preHandler guard tested the raw `req.url`, skipping
   Host/Origin/mutation-header validation. Guard now classifies via
@@ -660,7 +666,7 @@ original requirements above remain in force unless noted.
   cannot classify are hidden too; upstream kind detection is the source.
 - +2 discovery tests (null/undefined kind excluded; targets exclude them).
 
-### Commit history browser (2026-11-08, plan docs/2026-11-08-commit-log-plan.md)
+### Commit history browser (2026-11-08, plan docs/superpowers/plans/2026-11-08-commit-log-plan.md)
 - Agent view gains a **Commits** button -> new route/view listing the
   worktree's `git log` (newest first, default 50, cap `BOUNDS.maxCommits`
   200); clicking a commit opens the existing DiffView in new
@@ -899,3 +905,25 @@ original requirements above remain in force unless noted.
   check-less pushed commit → none).
 - Verification delta: +1 vitest (475 total); github adapter suite 19
   green; fixtures reshaped to `contexts.nodes`.
+
+### 2026-11-10: documentation organization and decision-trail transition
+
+- What changed: root-level feature plans moved to `docs/superpowers/plans/`;
+  the audit moved to `docs/audits/`. Added a documentation index, explicit
+  locations/lifecycle rules, and a
+  [documentation decision](../../decisions/2026-11-10-documentation-organization.md).
+  Corrected the PR/CI and sweep records' stale planning status using the
+  phase completion evidence above; original criteria/checklists remain intact.
+- Why: make records discoverable and stop accumulating unrelated feature
+  decisions in the scaffold plan. This explicitly supersedes the earlier
+  convention requiring every future change to append an amendment here.
+  Future rationale and evidence belong in the relevant feature record;
+  lasting cross-feature decisions belong in `docs/decisions/`.
+- Verification delta (2026-11-10): all 68 checked document references resolve;
+  all eight moved historical bodies are preserved. The targeted spec suite
+  passed (13 tests); typecheck, full Vitest (475), build, and Playwright (43)
+  passed. Independent documentation review found no actionable issues.
+  No runtime contracts, INV-* mappings, tests, or live proofs are changed.
+  Historical instructions to append here remain evidence of the old workflow,
+  not instructions for new work. Original criteria are not superseded by this
+  organizational change.

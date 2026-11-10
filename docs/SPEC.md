@@ -1,16 +1,20 @@
 # workmux-http — Current-State Specification
 
 Status: living document. This file describes **what the system does today**.
-The chronological decision trail lives in `docs/superpowers/plans/`
-(amendments) and per-feature plans — those explain *why*; this explains
+The decision trail lives in feature designs/plans and `docs/decisions/`,
+indexed in [docs/README.md](README.md). The original scaffold amendments
+remain historical evidence. Those records explain *why*; this explains
 *what is*. Resolve conflicts using the distinction and precedence below.
 
 **Precedence on conflict:** code and tests establish observed behavior.
 User-approved requirements establish intended behavior. A conflict is a
 finding to resolve, not permission to rewrite the requirement.
-For conflicting documents: SPEC.md > latest canonical amendment > AGENTS.md
-conventions > README.md > dated feature plans. This hierarchy does not
-override explicit user requirements.
+For conflicting current-behavior documents, SPEC.md takes precedence.
+Approved proposals describe intended changes, not implemented behavior.
+AGENTS.md governs development conventions; README.md covers usage.
+Historical plans/amendments explain past decisions. A later decision
+supersedes an earlier one only when it explicitly links and says so.
+None of these documents overrides explicit user requirements.
 
 **Drift harness:** `server/docs.spec.test.ts` machine-checks the tables
 below against `server/index.ts`, `server/config.ts`, and `server/security.ts`,
@@ -351,9 +355,13 @@ are checked by `server/docs.spec.test.ts`.
 | File | Role |
 |---|---|
 | `docs/SPEC.md` | **this file** — current state |
-| `docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md` | canonical spec + additive amendments (decision trail) |
-| `docs/YYYY-MM-DD-*-plan.md` | per-feature pre-implementation plans (historical) |
-| `docs/2026-11-08-project-audit.md` | security/robustness audit (all findings closed) |
+| `docs/README.md` | document index, lifecycle, and historical records |
+| `docs/superpowers/specs/YYYY-MM-DD-*-design.md` | feature designs; status distinguishes proposals from delivered history |
+| `docs/superpowers/plans/YYYY-MM-DD-*.md` | implementation plans, including legacy combined designs/plans |
+| `docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md` | historical scaffold + amendments through the documentation transition |
+| `docs/decisions/YYYY-MM-DD-*.md` | lasting decisions spanning features or development conventions |
+| `docs/audits/2026-11-08-project-audit.md` | historical security/robustness audit with remediation references |
+| `docs/screenshots/` | user-facing screenshots |
 | `AGENTS.md` | agent-facing conventions + invariants summary |
 | `README.md` | user-facing setup, env table, VPN model |
 

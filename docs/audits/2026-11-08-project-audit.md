@@ -2,6 +2,11 @@
 
 Date: 2026-11-08
 
+Status: historical audit. Findings F01–F12 were subsequently closed in the
+[scaffold amendments](../superpowers/plans/2026-11-07-workmux-http-dashboard.md)
+under “Audit remediation round 1” and “Audit remediation round 2”. The report
+below preserves the original baseline, findings, and verification limits.
+
 Source baseline: `89d3ce0` (`feat(worktrees): disable commit-now when clean, server rejects nothing_to_commit`)
 
 Environment: macOS, Node `v26.13.0`, installed lockfile dependencies

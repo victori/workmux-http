@@ -1,6 +1,6 @@
 # Fix plan: OMP reports Done while work continues
 
-Status: **Not implemented** (as of 2026-11-08). No phase shipped: no
+Status: **draft — not implemented** (as of 2026-11-08). No phase shipped: no
 provenance wording ("Reported done"), no `updatedTs` provenance display, no
 upstream lifecycle fix; no canonical amendment exists. The plan remains open
 for whoever picks up the upstream workmux/OMP lifecycle investigation.
