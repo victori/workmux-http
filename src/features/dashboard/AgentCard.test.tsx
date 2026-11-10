@@ -248,3 +248,17 @@ describe('AgentCard push', () => {
     expect(await screen.findByText(/non-fast-forward/, {}, { timeout: 3000 })).toBeInTheDocument()
   })
 })
+
+describe('AgentCard branch display', () => {
+  it('shows the git branch in the meta row', () => {
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.getByText('main')).toBeInTheDocument()
+  })
+
+  it('omits the branch when git info is missing', () => {
+    render(
+      <AgentCard agent={agent({ git: null })} selected={false} onOpen={noop} onOpenTerminal={noop} />,
+    )
+    expect(screen.queryByText('main')).toBeNull()
+  })
+})

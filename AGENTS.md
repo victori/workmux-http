@@ -91,8 +91,10 @@ it the default in code or docs.
 - **Invariants to preserve:** managed-only targets (revalidate ids against
   `discovery.agentTargets()`/`worktreeTargets()` at mutation time);
   single-use confirm tokens consumed synchronously and re-evaluated at
-  execute; never select/resize shared tmux windows (owned sessions only;
-  `killOwnedSession` double-checks `@wmhttp_owned`); never auto-retry
+  execute; never select/resize shared tmux windows during capture/input/
+  attach (navigation uses owned sessions; explicit confirmed Terminal
+  resize affects all clients; `killOwnedSession` double-checks
+  `@wmhttp_owned`); never auto-retry
   ambiguous delivery (`UnknownDeliveryError` → 502 `delivery_unknown`);
   degrade with `stale` markers, never fabricate empty data; gate
   repo-controlled revisions with `SAFE_REV`.
@@ -186,13 +188,29 @@ the fix and passes afterward. Report any verification limitations.
 Before finishing, compare the final implementation with the stated delta
 and review the diff for undocumented behavior changes.
 
+## Invariant-to-test mapping
+
+- `docs/SPEC.md` maps each core invariant's stable `INV-*` ID to named
+  regression tests and coverage limits. Use these IDs in the specification
+  delta, verification report, and review findings; never renumber or reuse IDs.
+- Before editing, inspect the mapped tests for affected invariants and
+  identify what they actually assert. Run the referenced test files for
+  focused verification, then the full verification gate.
+- Update the mapping in the same change when an invariant or mapped test
+  changes. If the task needs evidence the mapped tests do not provide, add
+  a focused regression or report the specific verification limitation.
+  Record unrelated coverage gaps without claiming they are resolved.
+- `server/docs.spec.test.ts` checks complete mappings and declared test
+  references. Reference existence does not establish behavior; skipped
+  native/tmux checks are not live integration proof.
+
 ## Spec Maintenance (post-plan changes)
 
 - `docs/SPEC.md` is the **current-state specification** (what the system
   does today). Any change to routes, env vars, error codes, invariants,
   WS protocol, or state machines MUST update it in the same commit.
-  `server/docs.spec.test.ts` machine-checks the route/env/error tables —
-  drift fails `npm test`.
+  `server/docs.spec.test.ts` machine-checks route/env/error tables and
+  invariant-to-test mappings — drift fails `npm test`.
 - Precedence on conflict: code and tests establish observed behavior.
   User-approved requirements establish intended behavior. A conflict is a
   finding to resolve, not permission to rewrite the requirement.
@@ -232,7 +250,7 @@ and review the diff for undocumented behavior changes.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  332 tests green baseline.
+  337 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

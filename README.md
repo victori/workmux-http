@@ -305,13 +305,15 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 326 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 334 vitest tests (unit + jsdom component + real-tmux
   integration on a disposable socket incl. terminal geometry audit +
   real-git hunk staging, path staging, the configurable commit runner, and
   push against a local bare remote incl. first-push, drift re-confirmation,
   divergence, and no-origin blocking; plus the SPEC.md drift harness, which
   fails the suite when routes/env vars/error codes change without updating
-  `docs/SPEC.md`).
+  `docs/SPEC.md`, a core invariant lacks a test mapping, or a mapped test
+  is renamed/deleted. The mapping also records coverage limits; reference
+  checks do not establish behavior or replace running the tests).
 - `npx playwright test` — 28 e2e tests at iPhone 13 viewport against the
   production build in fixture mode (dashboard, search, sessions, send flow,
   reader/terminal modes incl. mocked-WebSocket attach/confirm/resize,
@@ -330,7 +332,7 @@ Design decisions worth knowing:
 | `o` open worktree | Worktrees tab, card actions, create sheet |
 | `p` / `:` command mode | ⌘P / `:` command palette |
 | `s` status | connection banner + `/api/health` |
-| `/` search | search field (project, name, status, branch) |
+| `/` search | search field (project, name, branch) |
 | `F`/`f` follow/unfollow | auto-follow at bottom; *Jump to latest* breaks it |
 | `i` interrupt | agent header *⏹ Stop* (exact-target confirm) + composer `Ctrl+C` key |
 | `Ctrl+u`/`Ctrl+d` scroll | native momentum scroll + jump buttons |

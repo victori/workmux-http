@@ -13,9 +13,11 @@ conventions > README.md > dated feature plans. This hierarchy does not
 override explicit user requirements.
 
 **Drift harness:** `server/docs.spec.test.ts` machine-checks the tables
-below against `server/index.ts`, `server/config.ts`, and `server/security.ts`
-in the normal `npm test` run. Adding a route/env var/error code without
-updating this file fails the suite.
+below against `server/index.ts`, `server/config.ts`, and `server/security.ts`,
+and validates the invariant-to-test mapping against declared tests in the
+normal `npm test` run. Missing mappings and renamed/deleted test references
+fail the suite, as do routes/env vars/error codes changed without updating
+this file.
 
 ## 1. System model
 
@@ -113,32 +115,64 @@ stale is not an HTTP error.
 
 ## 4. Core invariants
 
-1. **Managed-only targets**: mutations revalidate ids against
+<!-- check:invariants -->
+1. **INV-01 — Managed-only targets**: mutations revalidate ids against
    `discovery.agentTargets()` / `worktreeTargets()` at execution time.
-2. **Single-use confirm tokens**: consumed synchronously at execute and
-   re-evaluated (TTL + state key) inside the lock; execute never trusts
-   prepare-time state.
-3. **Per-target locks span operation completion** (`Operations.settled`),
-   serializing commit/add/unstage/hunk/merge/remove/stop/push per worktree.
-4. **Never select/resize shared tmux windows** — only owned grouped
-   sessions `wmhttp-adv-*` marked `@wmhttp_owned`; `killOwnedSession`
-   double-checks the marker.
-5. **Never auto-retry ambiguous delivery** (`UnknownDeliveryError` →
+2. **INV-02 — Single-use confirm tokens**: consumed synchronously and
+   checked for expiry at execute; the state key is re-evaluated inside the
+   lock. Execute never trusts prepare-time state.
+3. **INV-03 — Per-target locks span operation completion** (`Operations.settled`):
+   commit/add/unstage/hunk/merge/remove/push serialize by worktree id;
+   stop serializes by pane id. These locks cover web mutations only.
+4. **INV-04 — Shared tmux geometry and ownership**: Reader/input/Terminal
+   attach never select or resize shared windows. Navigation uses owned
+   grouped sessions `wmhttp-adv-*` marked `@wmhttp_owned`; cleanup
+   double-checks the marker. Explicit confirmed Terminal resize is the
+   documented exception and affects all clients of the shared window.
+5. **INV-05 — Never auto-retry ambiguous delivery** (`UnknownDeliveryError` →
    `delivery_unknown` 502).
-6. **Degrade, never fabricate**: source failure ⇒ last-good + `stale`
+6. **INV-06 — Degrade, never fabricate**: source failure ⇒ last-good + `stale`
    markers; empty data only when genuinely empty.
-7. **Conflicts are awareness-only**: `u` paths listed, never auto-added,
+7. **INV-07 — Conflicts are awareness-only**: `u` paths listed, never auto-added,
    never restorable via unstage.
-8. **Repo-controlled revisions gated by `SAFE_REV`** before any diff/
+8. **INV-08 — Repo-controlled revisions gated by `SAFE_REV`** before any diff/
    merge of attacker-influenced refs.
-9. **Stale writes blocked**: hunk ops carry `snapshotId`; superseded ⇒
+9. **INV-09 — Stale writes blocked**: hunk ops carry `snapshotId`; superseded ⇒
    `snapshot_stale`.
-10. **Data freshness** for the banner = `deriveConnection(snapshot, error,
+10. **INV-10 — Data freshness** for the banner = `deriveConnection(snapshot, error,
     lastOkAt)` (source health + polling), **never** `snapshot.stale` alone
     (idle agents are per-agent badges, not a connection problem).
-11. **Terminal is session-wide and honestly disclosed**: attach targets the
-    requested pane but tmux focus is per-window; `attached.activePaneId` +
+11. **INV-11 — Terminal is session-wide and honestly disclosed**: attach validates
+    the requested pane but tmux focus is per-window; `attached.activePaneId` +
     2 s watchdog emit `pane-changed` and the UI names the keystroke target.
+
+### Invariant-to-test mapping
+
+Use stable IDs in specification deltas and review findings. IDs are never
+renumbered or reused; new invariants receive a new ID. References use
+repository-relative `file::literal test title` and must name a direct
+`test(...)` or `it(...)` declaration. Run the referenced files with
+`npx vitest run <file> ...` for focused verification, then the full gate.
+
+The drift harness checks mapping completeness and test declarations. It
+does not establish assertion quality, execution, or passing results.
+Skipped integration tests are not live evidence; record missing dependencies
+and any applicable gap below when reporting verification.
+
+<!-- check:invariant-tests -->
+| Invariant | Regression tests | Coverage limits / gaps |
+|---|---|---|
+| `INV-01` | `server/services/input.test.ts::should reject unmanaged targets`<br>`server/services/management.commit.test.ts::should 404 for unmanaged worktrees`<br>`server/services/discovery.test.ts::should not treat kind-less panes as message targets` | Rejection and discovery filtering are covered; no dedicated regression for a target disappearing while its mutation is queued. |
+| `INV-02` | `server/services/management.hunks.test.ts::should reject a second execute of the same token`<br>`server/services/management.hunks.test.ts::should let exactly one of two concurrent executes through`<br>`server/services/management.hunks.test.ts::should reject execute once the token TTL elapsed even without a later prepare (F08)`<br>`server/services/management.push.test.ts::should reject execute when HEAD moved after prepare` | Single use, expiry, and HEAD drift are covered; no exact TTL-boundary or state-changing-while-queued regression. |
+| `INV-03` | `server/services/management.hunks.test.ts::should serialize executes for one target until the first operation settles (F03)` | Gated stop/stop concurrency only; no dedicated commit/add or other cross-action concurrency regression. External CLI/agent mutations are outside the web lock. |
+| `INV-04` | `integration/tmux.integration.test.ts::should capture and send without changing active window/pane or size elsewhere`<br>`integration/tmux.integration.test.ts::should keep grouped session window selection independent from parent`<br>`integration/tmux.integration.test.ts::should refuse to kill sessions lacking the ownership marker`<br>`integration/tmux.integration.test.ts::should attach at exact pane size, resize only when asked, and clean up`<br>`src/features/terminal/TerminalView.test.tsx::resize button opens a confirm dialog; cancel sends nothing` | Real-tmux checks require tmux; the geometry check also requires native node-pty and can skip. The confirmation UI uses mocks; physical Safari is not covered. |
+| `INV-05` | `server/services/input.test.ts::should report unknown delivery on ambiguous failure without retry` | Service-level simulated failure; no HTTP 502 regression or real disconnect during paste/Enter. |
+| `INV-06` | `server/services/discovery.test.ts::should mark source errors and stay stale when tmux fails, keeping last good data`<br>`server/services/discovery.test.ts::should treat empty observations as valid empty snapshot`<br>`src/features/agent/OutputPane.test.tsx::keeps the last snapshot and shows a notice on transient failure, then recovers` | tmux and Reader failure paths are covered; not every discovery-source failure combination. |
+| `INV-07` | `server/adapters/git.test.ts::should list unmerged paths as conflicts` | Partial: conflict listing is covered; no dedicated service regression for conflict exclusion from bulk add and unstage. |
+| `INV-08` | `server/adapters/git.test.ts::should reject unsafe revisions`<br>`server/security.routes.test.ts::rejects range syntax in the sha parameter` | Commit-diff rejection is covered; no dedicated hostile .workmux.yaml base or merge-ref regression. |
+| `INV-09` | `server/services/management.hunks.test.ts::should reject stale snapshots without touching the index`<br>`server/services/management.hunks.test.ts::should reject foreign patch text as piece` | Real temporary git index checks; no dedicated HTTP snapshot_stale status regression. |
+| `INV-10` | `src/hooks/useDashboard.test.ts::is online when all sources are healthy even if agents are idle-stale`<br>`src/hooks/useDashboard.test.ts::is stale when some sources failed`<br>`src/hooks/useDashboard.test.ts::is stale when polling stalled past the timeout`<br>`src/hooks/useDashboard.poll.test.ts::reports online immediately after resume (no stale flash)` | Derived-state and mocked polling checks; no real VPN outage or physical Safari background/resume proof. |
+| `INV-11` | `server/services/terminal.hub.test.ts::reports the window active pane on attach even when it differs from the agent`<br>`server/services/terminal.hub.test.ts::emits pane-changed when the window active pane moves while attached`<br>`src/features/terminal/TerminalView.test.tsx::discloses when the window active pane differs from the agent (F05)` | Hub and UI use mocks; no split-pane live integration check of disclosure updates. |
 
 ## 5. State machines
 
@@ -192,7 +226,9 @@ the visible viewport, never the expanded grid.
 
 ## 8. UI capability inventory (behavioral, not visual)
 
-- **Dashboard**: agents/worktrees tabs, search/sort/filters, per-agent
+- **Dashboard**: agents/worktrees tabs, search/sort/filters (agent search
+  matches project, name, and branch), per-agent branch label (when git info
+  is available), per-agent
   pending badge (`●N`), unpushed indicator, connection banner, PR links.
   Only workmux records with a recognized `agent_kind` are listed; kind-less
   panes (plain shells, dev servers) are filtered out of both the agent
@@ -221,8 +257,8 @@ the visible viewport, never the expanded grid.
 `npm run typecheck && npm test && npm run build && npm run test:e2e`, plus a
 live read-only smoke (`/api/health`, `/api/dashboard`) when touching server
 paths. Exact test counts live in README/AGENTS (deliberately **not** here —
-they drift every feature). This file's tables are checked by
-`server/docs.spec.test.ts`.
+they drift every feature). This file's tables and invariant-to-test mapping
+are checked by `server/docs.spec.test.ts`.
 
 ## 10. Doc map
 
@@ -237,4 +273,5 @@ they drift every feature). This file's tables are checked by
 
 Maintenance rule (also in AGENTS.md): any change to routes, env vars, error
 codes, invariants, WS protocol, or state machines MUST update this file in
-the same commit; the drift harness enforces the enumerable subsets.
+the same commit; the drift harness enforces the enumerable subsets and
+validates the test references, not the semantic coverage of their assertions.

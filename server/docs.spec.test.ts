@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import ts from 'typescript'
 import { describe, expect, test } from 'vitest'
 
 /**
  * Spec drift harness: machine-checks the enumerable tables in docs/SPEC.md
- * against their code sources. Adding/removing a route, env var, or error
- * code without updating the spec fails the suite — docs stay honest without
- * relying on discipline.
+ * against code and declared tests. Missing routes, env vars, error codes,
+ * or invariant mappings fail the suite.
  */
 
 const root = process.cwd()
@@ -23,6 +23,56 @@ function specSection(name: string): string {
   const end = rest.search(/\n<!-- check:|\n## /)
   return end === -1 ? rest : rest.slice(0, end)
 }
+
+function declaredTests(file: string): Map<string, number> {
+  const source = ts.createSourceFile(
+    file, readFileSync(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true,
+  )
+  const names = new Map<string, number>()
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+      && ['test', 'it'].includes(node.expression.text)) {
+      const title = node.arguments[0]
+      if (title && ts.isStringLiteral(title)) names.set(title.text, (names.get(title.text) ?? 0) + 1)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return names
+}
+
+describe('SPEC.md invariant-to-test mapping', () => {
+  test('should map every core invariant exactly once with coverage limits', () => {
+    const invariants = specSection('invariants')
+    const ids = [...invariants.matchAll(/^\d+\. \*\*(INV-\d{2}) —/gm)]
+      .map((m) => m[1])
+    const rows = [...specSection('invariant-tests').matchAll(/^\| `(INV-\d{2})` \| ([^|]*) \| ([^|]*) \|$/gm)]
+    expect(ids.length).toBeGreaterThan(0)
+    expect(ids).toHaveLength([...invariants.matchAll(/^\d+\. /gm)].length)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(rows.map((m) => m[1]).sort()).toEqual(ids.slice().sort())
+    for (const row of rows) {
+      expect(row[2]?.trim(), `${row[1]} needs regression tests`).toBeTruthy()
+      expect(row[3]?.trim(), `${row[1]} needs coverage limits`).toBeTruthy()
+    }
+  })
+
+  test('should reference declared regression tests for every mapped invariant', () => {
+    const rows = [...specSection('invariant-tests').matchAll(/^\| `(INV-\d{2})` \| ([^|]*) \|/gm)]
+    const sources = new Map<string, Map<string, number>>()
+    for (const [, id, refs] of rows) {
+      for (const ref of (refs ?? '').trim().split('<br>')) {
+        const match = ref.trim().match(/^`((?:server|src|integration)\/[\w./-]+\.test\.tsx?)::([^`]+)`$/)
+        expect(match, `${id}: invalid file::test reference ${ref}`).not.toBeNull()
+        const [, file, title] = match ?? []
+        if (!file || !title) throw new Error(`invalid test reference for ${id}`)
+        expect(file.split('/'), `${id}: test path must stay inside the repository`).not.toContain('..')
+        if (!sources.has(file)) sources.set(file, declaredTests(file))
+        expect(sources.get(file)?.get(title), `${id}: missing or ambiguous test ${file}::${title}`).toBe(1)
+      }
+    }
+  })
+})
 
 describe('SPEC.md routes match the server', () => {
   const sourceRoutes: string[] = []

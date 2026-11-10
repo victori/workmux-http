@@ -122,6 +122,14 @@ export function AgentCard({
         </div>
         <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
           <span className="truncate">{agent.project}</span>
+          {agent.git?.branch && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink truncate font-mono" title={agent.git.branch}>
+                {agent.git.branch}
+              </span>
+            </>
+          )}
           <span aria-hidden>·</span>
           <span className="shrink-0 tabular-nums">{humanizeElapsed(agent.elapsedSecs)}</span>
           {agent.agentKind && (

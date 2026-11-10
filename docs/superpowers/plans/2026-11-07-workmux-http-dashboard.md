@@ -767,3 +767,42 @@ original requirements above remain in force unless noted.
   commit-history ordering assertion in server/adapters/git.test.ts; the
   focused adapter rerun (27) and full rerun passed without code changes.
   That intermittent failure remains outside this documentation change.
+
+### Invariant-to-test mapping (2026-11-09, development workflow)
+
+- Core invariants now have stable INV-01 through INV-11 IDs and a mapping
+  to named regression tests with explicit coverage limits. Agents use IDs
+  in specification deltas and review findings, inspect the mapped
+  assertions before editing, and run affected test files before the full
+  gate. Existing gaps are recorded rather than presented as complete proof.
+- The SPEC.md drift harness validates one mapping per invariant, nonempty
+  coverage limits, and unique declared test references using the TypeScript
+  parser. Adding an invariant or deleting/renaming a referenced test without
+  updating the mapping fails verification; skipped tests remain unproven.
+- Corrects conflicting invariant summaries without changing runtime
+  behavior: confirmed Terminal resize is the documented geometry exception,
+  token expiry is checked at execute before locking, stop locks use pane ids,
+  and Terminal attach validates the requested pane without promising focus.
+- Verification delta: two new drift checks; missing-mapping rejection
+  demonstrated before populating the table, and a renamed-reference probe
+  rejected before restoring the correct reference. Targeted drift checks
+  passed (13), typecheck/build passed, full Vitest passed (334), and fixture
+  e2e passed (28) with a fresh server. Manual second-pass diff review
+  completed; live read-only /api/health and /api/dashboard smoke returned
+  HTTP 200. No runtime behavior changes.
+
+### Branch visible on agent rows + branch-aware agent search (2026-11-09, user request)
+- Agent cards showed project/elapsed/kind but never the branch the agent is
+  on, although `AgentView.git.branch` already carried it (same GitInfo that
+  drives the pending/unpushed badges). Meta row is now
+  `project · branch · elapsed · kind` (mono branch, truncated; omitted when
+  git info is unavailable).
+- `filterAgents` now matches branch case-insensitively — the search
+  placeholder and README parity table promised branch search but only
+  worktree search implemented it. README parity row corrected (also dropped
+  its false "status" claim: status is a filter, not search text).
+- Verification: +3 vitest (337 total: branch rendered, omitted without git,
+  branch search hits/misses); fixture-mode e2e unaffected (fixture agents
+  have git: null; the branch render path is the existing live GitInfo used
+  by badges). One unrelated suite flake observed once, not reproducible in
+  three subsequent full runs.

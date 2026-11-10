@@ -50,7 +50,7 @@ export function filterAgents(agents: AgentView[], opts: FilterOpts): AgentView[]
   return agents.filter((a) => {
     if (opts.session && a.session !== opts.session) return false
     if (opts.hideStale && a.status === 'stale') return false
-    if (q && !`${a.project} ${a.name}`.toLowerCase().includes(q)) return false
+    if (q && !`${a.project} ${a.name} ${a.git?.branch ?? ''}`.toLowerCase().includes(q)) return false
     return true
   })
 }

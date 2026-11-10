@@ -112,6 +112,21 @@ describe('filterAgents', () => {
     expect(filterAgents(list, { query: '' })).toHaveLength(2)
   })
 
+  it('search matches the agent branch', () => {
+    const git = (branch: string) => ({
+      branch,
+      hasStaged: false,
+      hasUnstaged: false,
+      hasUnmergedCommits: false,
+      unborn: false,
+      ahead: null,
+      behind: null,
+    })
+    const list = [agent({ id: 'b1', git: git('feat/timezone') }), agent({ id: 'b2', git: git('main') })]
+    expect(filterAgents(list, { query: 'TIME' }).map((a) => a.id)).toEqual(['b1'])
+    expect(filterAgents(list, { query: 'main' }).map((a) => a.id)).toEqual(['b2'])
+  })
+
   it('hideStale removes stale agents', () => {
     expect(filterAgents(list, { hideStale: true }).map((a) => a.id)).toEqual(['a1'])
   })
