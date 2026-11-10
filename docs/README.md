@@ -59,6 +59,9 @@ Statuses below reflect existing completion records, not new live verification.
 
 ## Decisions and audits
 
+- [Project audit, 2026-11-10](audits/2026-11-10-project-audit.md): complete;
+  eight open reproduced defects and seven improvement opportunities. Full
+  verification gate passes; remediation is not implemented.
 - [Documentation organization](decisions/2026-11-10-documentation-organization.md):
   accepted; explains the transition from a global scaffold amendment log to
   feature records and lasting decisions.

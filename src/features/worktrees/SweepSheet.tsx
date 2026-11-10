@@ -53,6 +53,7 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [keepBranches, setKeepBranches] = useState(true)
   const [ack, setAck] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const onChangedRef = useRef(onChanged)
   onChangedRef.current = onChanged
@@ -165,25 +166,32 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
   }
 
   const review = (): void => {
-    if (ui.phase !== 'selecting' || selected.size === 0) return
+    if (ui.phase !== 'selecting' || selected.size === 0 || submitting) return
     setNotice(null)
+    setSubmitting(true)
+    const scan = ui.scan
+    const scanId = ui.scanId
     void api
-      .prepareSweep({ scanId: ui.scanId, worktreeIds: [...selected], keepBranches, requestId: newRequestId() })
+      .prepareSweep({ scanId, worktreeIds: [...selected], keepBranches, requestId: newRequestId() })
       .then((prepared) => {
+        setSubmitting(false)
         setAck(false)
-        setUi({ phase: 'reviewing', prepared, scanId: ui.scanId, scan: ui.scan })
+        setUi({ phase: 'reviewing', prepared, scanId, scan })
       })
       .catch((err: unknown) => {
+        setSubmitting(false)
         setNotice(err instanceof ApiError ? `${err.message} — rescan required` : String(err))
       })
   }
 
   const execute = (): void => {
-    if (ui.phase !== 'reviewing') return
+    if (ui.phase !== 'reviewing' || submitting) return
     setNotice(null)
+    setSubmitting(true)
     void api
       .executeSweep({ confirmToken: ui.prepared.confirmToken, acceptWarnings: true, requestId: newRequestId() })
       .then((op) => {
+        setSubmitting(false)
         saveTab('sweepOperationId', op.id)
         setUi({
           phase: 'running',
@@ -197,6 +205,7 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
         })
       })
       .catch((err: unknown) => {
+        setSubmitting(false)
         setNotice(err instanceof ApiError ? err.message : String(err))
       })
   }
@@ -272,6 +281,7 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
                     <label className="flex items-start gap-2">
                       <input
                         type="checkbox"
+                        aria-label={c.targetLabel}
                         className="mt-1 h-5 w-5 shrink-0"
                         disabled={!eligible}
                         checked={selected.has(c.worktreeId)}
@@ -313,7 +323,7 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
             </label>
             <button
               onClick={review}
-              disabled={selected.size === 0}
+              disabled={selected.size === 0 || submitting}
               className="min-h-[44px] w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
               Review selection ({selected.size})
@@ -360,7 +370,7 @@ export function SweepSheet({ worktreeIds, onClose, onChanged }: SweepSheetProps)
               </button>
               <button
                 onClick={execute}
-                disabled={!ack}
+                disabled={!ack || submitting}
                 className="min-h-[44px] flex-1 rounded-lg bg-err px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 Remove {ui.prepared.targets.length} worktrees

@@ -6,6 +6,7 @@ import type { Workmux } from '../adapters/workmux.js'
 import type { SweepGitFacts, SweepGitLike } from '../adapters/sweep-git.js'
 import { confirmTokenOf } from '../targets.js'
 import type {
+  DashboardSnapshot,
   GithubStatus,
   OperationView,
   PreparedSweep,
@@ -194,9 +195,10 @@ export class SweepService {
     const frozen: FrozenTarget[] = []
     const candidates: SweepCandidate[] = []
     const warnings = ['Removal deletes the worktree directory, including Git-ignored files.']
+    const batch = await this.deps.discovery.snapshot(true)
     for (const id of ids) {
       const scanned = record.rows.get(id)!
-      const fresh = await this.collectFresh(id)
+      const fresh = await this.collectFresh(id, batch)
       if (!fresh.ok) throw new SnapshotStaleError(`${id}: ${fresh.reason}; rescan required`)
       const candidate = classifySweep(fresh.evidence.facts, request.keepBranches)
       if (candidate.reason === null || candidate.blockers.length > 0) {
@@ -354,9 +356,14 @@ export class SweepService {
     }
   }
 
-  /** Fresh evidence for one target: forced discovery refresh, git facts, fresh PR read, post-network re-read. */
-  private async collectFresh(id: string): Promise<{ ok: true; evidence: FreshEvidence } | { ok: false; reason: string }> {
-    const snap = await this.deps.discovery.snapshot(true)
+  /**
+   * Fresh evidence for one target: git facts, fresh PR read, post-network
+   * re-read. `pre` reuses an already-forced discovery snapshot (scan/prepare
+   * batches force once per batch); execute passes none so every removal gets
+   * its own forced refresh.
+   */
+  private async collectFresh(id: string, pre?: DashboardSnapshot): Promise<{ ok: true; evidence: FreshEvidence } | { ok: false; reason: string }> {
+    const snap = pre ?? (await this.deps.discovery.snapshot(true))
     const wt = snap.worktrees.find((w) => w.id === id)
     if (!wt) return { ok: false, reason: 'target is not managed anymore' }
     if (!this.coreHealthy(snap.sources)) return { ok: false, reason: 'source state is unknown' }
@@ -423,10 +430,10 @@ export class SweepService {
 
   private async collectRows(ids: string[]): Promise<Array<{ candidate: SweepCandidate; evidenceKey: string; frozen: FrozenTarget }>> {
     const out: Array<{ candidate: SweepCandidate; evidenceKey: string; frozen: FrozenTarget }> = []
+    const batch = await this.deps.discovery.snapshot(true)
     for (const id of ids) {
-      const snap = await this.deps.discovery.snapshot()
-      const wt = snap.worktrees.find((w) => w.id === id)
-      const fresh = await this.collectFresh(id)
+      const wt = batch.worktrees.find((w) => w.id === id)
+      const fresh = await this.collectFresh(id, batch)
       const frozen: FrozenTarget = {
         worktreeId: id,
         targetLabel: wt ? `${wt.project}/${wt.handle}` : id,

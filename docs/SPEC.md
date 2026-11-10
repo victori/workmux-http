@@ -212,8 +212,11 @@ are `unknown`; a successful empty set is `none`; neutral/skipped are counted
 separately and cannot turn a badge green; all-green does not mean mergeable.
 
 Refresh: shared service (60 s success TTL, 15 s failure backoff, 4
-concurrent, queue 100, cache 1000, in-flight dedup), keys =
-repos + branch + HEAD oid; departed keys pruned and late results dropped.
+concurrent scheduled refreshes, queue 100, cache 1000, in-flight dedup),
+keys = repos + branch + HEAD oid; departed keys pruned and late results
+dropped. Sweep's synchronous `fresh` reads bypass the scheduled cap (one
+at a time, serial per sweep) so confirmation evidence never queues
+behind background polls.
 Discovery schedules reads and never awaits the network; GitHub failure
 never affects `sources` or `deriveConnection` (INV-06/INV-10 extension).
 Requires the `gh` CLI; fixture mode serves `fixtures/github-status.json`

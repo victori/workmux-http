@@ -335,7 +335,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 475 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 477 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,

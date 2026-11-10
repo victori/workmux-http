@@ -120,11 +120,11 @@ test.describe('clean sweep (intercepted)', () => {
     await expect(page.getByText(/uncommitted changes/)).toBeVisible()
 
     // keyboard selection of the eligible row
-    const eligible = page.getByRole('checkbox').first()
+    const eligible = page.getByRole('checkbox', { name: 'alpha/feat-timezone' })
     await eligible.focus()
     await page.keyboard.press('Space')
     await expect(eligible).toBeChecked()
-    await expect(page.getByRole('checkbox').nth(1)).toBeDisabled()
+    await expect(page.getByRole('checkbox', { name: 'beta/fix-jobs' })).toBeDisabled()
 
     // 44px tap targets for the primary controls
     for (const sel of [/select eligible/i, /review selection/i]) {
@@ -158,7 +158,7 @@ test.describe('clean sweep (intercepted)', () => {
       void route.fulfill(json(409, { error: 'snapshot_stale', detail: 'evidence changed since scan' })),
     )
     await openSweep(page)
-    await page.getByRole('checkbox').first().check()
+    await page.getByRole('checkbox', { name: 'alpha/feat-timezone' }).check()
     await page.getByRole('button', { name: /review selection/i }).click()
     await expect(page.getByRole('alert').getByText(/snapshot_stale.*rescan/i)).toBeVisible()
     await expect(page.getByRole('button', { name: /review selection/i })).toBeVisible()

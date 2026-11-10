@@ -927,3 +927,26 @@ original requirements above remain in force unless noted.
   Historical instructions to append here remain evidence of the old workflow,
   not instructions for new work. Original criteria are not superseded by this
   organizational change.
+
+### 2026-11-10 (audit): sweep follow-ups from the post-implementation review
+
+- Fixed: (1) scan/prepare forced a full discovery rebuild **per target**
+  (`snapshot(true)` inside `collectFresh`) — now forced once per batch and
+  shared across rows; execute keeps the per-target forced refresh (the
+  safety requirement). (2) SweepSheet had no in-flight guard — double-tap
+  on Remove produced a confusing `confirmation_required` error while the
+  sweep was actually running (token single-use), and double-tap on Review
+  leaked orphan tokens; both buttons now disable while their request is in
+  flight. (3) sweep's synchronous `github.fresh` reads bypass the 4-job
+  scheduled-refresh cap by design (serial per sweep) — SPEC wording
+  corrected to say so instead of implying a global cap. (4) sweep row
+  checkboxes gained `aria-label={targetLabel}`; unit + e2e selectors moved
+  from brittle DOM-order indexing to accessible names.
+- Audit cleared without changes: fork-PR discovery (`--repo base` +
+  client-side headRepository equality), fork-parent query shape, lazy
+  token/scan pruning (bounded), dedup-after-eviction (conservative
+  ConfirmationError).
+- Verification delta: +2 vitest (477 total): batch refresh counting
+  (1 scan = 1 forced refresh, prepare = 1 more) and repeat-click
+  suppression (prepare/execute each called exactly once under gated
+  promises). Sweep e2e green with named selectors.

@@ -250,6 +250,14 @@ describe('SweepService scan', () => {
     expect(scan.expiresAt).toBe(h.clock.t + 300_000)
   })
 
+  test('should force discovery once per scan batch and once per prepare', async () => {
+    const h = harness()
+    const { scanId } = await finishScan(h, ['wt_aaaa', 'wt_bbbb', 'wt_main'])
+    expect(h.refreshCount()).toBe(1)
+    await prepareIds(h, scanId, ['wt_aaaa', 'wt_bbbb'])
+    expect(h.refreshCount()).toBe(2)
+  })
+
   test('should allow only one scan at a time', async () => {
     const h = harness()
     const gate = Promise.withResolvers<void>()

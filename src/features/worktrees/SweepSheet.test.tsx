@@ -131,22 +131,47 @@ afterEach(() => {
 describe('SweepSheet', () => {
   it('starts with no cleanup targets selected', async () => {
     await openSelecting()
-    const boxes = screen.getAllByRole('checkbox')
-    // three candidate rows + the keep-branches toggle
-    expect(boxes.length).toBeGreaterThanOrEqual(3)
-    for (const box of boxes.slice(0, 3)) expect(box).not.toBeChecked()
-    expect(screen.getByText('proj/aaaa')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'proj/aaaa' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'proj/bbbb' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'proj/cccc' })).not.toBeChecked()
     expect(screen.getByText(/uncommitted changes/)).toBeInTheDocument()
   })
 
   it('selects only eligible rows in the scanned scope', async () => {
     await openSelecting()
     fireEvent.click(screen.getByRole('button', { name: /select eligible/i }))
-    const boxes = screen.getAllByRole('checkbox')
-    expect(boxes[0]).toBeChecked() // wt_aaaa eligible
-    expect(boxes[1]).not.toBeChecked() // wt_bbbb blocked (disabled)
-    expect(boxes[2]).toBeChecked() // wt_cccc eligible
-    expect(boxes[1]).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'proj/aaaa' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'proj/bbbb' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'proj/cccc' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'proj/bbbb' })).toBeDisabled()
+  })
+
+  it('ignores repeat clicks while review or removal is in flight', async () => {
+    await openSelecting()
+    fireEvent.click(screen.getByRole('button', { name: /select eligible/i }))
+    let resolveGate!: (p: PreparedSweep) => void
+    const gate = new Promise<PreparedSweep>((r) => {
+      resolveGate = r
+    })
+    vi.mocked(api.prepareSweep).mockReturnValue(gate)
+    fireEvent.click(screen.getByRole('button', { name: /review selection/i }))
+    fireEvent.click(screen.getByRole('button', { name: /review selection/i }))
+    expect(vi.mocked(api.prepareSweep)).toHaveBeenCalledTimes(1)
+    resolveGate(prepared([eligibleA, eligibleC]))
+    await flush(0)
+    fireEvent.click(screen.getByRole('checkbox', { name: /acknowledge warnings/i }))
+    let resolveExecute!: (op: OperationView) => void
+    const egate = new Promise<OperationView>((r) => {
+      resolveExecute = r
+    })
+    vi.mocked(api.executeSweep).mockReturnValue(egate)
+    fireEvent.click(screen.getByRole('button', { name: /remove 2 worktrees/i }))
+    fireEvent.click(screen.getByRole('button', { name: /remove 2 worktrees/i }))
+    expect(vi.mocked(api.executeSweep)).toHaveBeenCalledTimes(1)
+    resolveExecute(sweepRunning('op-x'))
+    vi.mocked(api.operation).mockResolvedValue(sweepRunning('op-x'))
+    await flush(0)
+    expect(screen.getByRole('status').textContent).toMatch(/removing|running/i)
   })
 
   it('keeps branches by default', async () => {
