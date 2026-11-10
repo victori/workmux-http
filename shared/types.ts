@@ -61,6 +61,22 @@ export interface WorktreeView {
   github?: GithubStatus
   /** Unpushed commit count (ahead of upstream or origin/<branch>). Null = unknown / no git info. */
   unpushed: number | null
+  /** Per-remote publish state; absent = git source unhealthy (never fabricated). */
+  remotes?: RemoteStatus[]
+}
+
+/** Publish state of the current branch against one configured remote. */
+export interface RemoteStatus {
+  name: string
+  url: string
+  /** True when refs/remotes/<name>/<branch> exists locally. */
+  hasRef: boolean
+  /** Commits on HEAD not on <name>/<branch>; null when hasRef is false or unknown. */
+  unpushed: number | null
+  /** Commits on <name>/<branch> not on HEAD; null when hasRef is false or unknown. */
+  behind: number | null
+  /** True when this remote is the branch's upstream remote. */
+  upstream: boolean
 }
 
 export type CiState = 'none' | 'pending' | 'passing' | 'failing' | 'neutral' | 'unknown'
@@ -289,6 +305,10 @@ export interface PrepareActionRequest {
   targetId: string
   /** User acknowledged warnings (e.g. discard uncommitted changes). */
   acceptWarnings?: boolean
+  /** For 'push': target remote; server default = upstream remote → origin → sole remote. */
+  remote?: string
+  /** For 'push': also set the selected remote as upstream (-u). */
+  setUpstream?: boolean
 }
 
 export interface PreparedAction {
@@ -305,6 +325,14 @@ export interface PreparedAction {
   commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */
   blocked?: string
+  /** For 'push': remote the token binds (server-resolved when unset in request). */
+  remote?: string
+  /** For 'push': configured remotes to choose from; absent = single/pinned remote flow. */
+  remotes?: RemoteStatus[]
+  /** True when a configured push command owns the remote (no {{REMOTE}} token). */
+  remoteLocked?: boolean
+  /** For 'push': effective -u decision bound into the token. */
+  setUpstream?: boolean
 }
 
 export interface ExecuteActionRequest extends PrepareActionRequest {

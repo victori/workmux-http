@@ -54,6 +54,23 @@ export function AgentCard({
     }
   }
 
+  /** Remote/flag changes rebind the confirm token server-side; re-prepare. */
+  async function revise(remote: string, setUpstream?: boolean): Promise<void> {
+    if (busy) return
+    setNote(null)
+    try {
+      const prepared = (await api.prepare({
+        action: 'push',
+        targetId: agent.worktreeId,
+        remote,
+        setUpstream,
+      })) as PreparedWithToken
+      setPending(prepared)
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'could not re-prepare push')
+    }
+  }
+
   async function confirmPush(acceptWarnings: boolean): Promise<void> {
     const token = pending?.confirmToken
     if (!pending || !token) return
@@ -67,6 +84,8 @@ export function AgentCard({
         acceptWarnings,
         confirmToken: token,
         requestId: newRequestId(),
+        remote: pending.remote,
+        setUpstream: pending.setUpstream,
       })
       const final = await pollOperation(op.id, () => cancelledRef.current)
       setNote(
@@ -124,6 +143,14 @@ export function AgentCard({
           </span>
         </div>
         <div className="mt-1 flex items-center gap-2 text-xs text-fg-muted">
+          {agent.agentKind && (
+            <span
+              title={`Agent: ${agent.agentKind}`}
+              className="max-w-[45%] shrink-0 truncate rounded border border-line bg-surface-2 px-1.5 font-medium text-fg"
+            >
+              {agent.agentKind}
+            </span>
+          )}
           <span className="truncate">{agent.project}</span>
           {agent.git?.branch && (
             <>
@@ -135,12 +162,6 @@ export function AgentCard({
           )}
           <span aria-hidden>·</span>
           <span className="shrink-0 tabular-nums">{humanizeElapsed(agent.elapsedSecs)}</span>
-          {agent.agentKind && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="truncate">{agent.agentKind}</span>
-            </>
-          )}
         </div>
         {agent.title && <p className="mt-1.5 line-clamp-2 text-xs text-fg-muted">{agent.title}</p>}
       </button>
@@ -190,6 +211,12 @@ export function AgentCard({
           commits={pending.commits}
           commitsTruncated={pending.commitsTruncated}
           blocked={pending.blocked}
+          remotes={pending.remotes}
+          remote={pending.remote}
+          remoteLocked={pending.remoteLocked}
+          setUpstream={pending.setUpstream}
+          onRemoteChange={(name) => void revise(name, pending.setUpstream)}
+          onSetUpstreamChange={(v) => pending.remote !== undefined && void revise(pending.remote, v)}
           confirmLabel="Push now"
           ackLabel="I confirm these commits are ready to push"
           requireAck

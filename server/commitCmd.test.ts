@@ -162,6 +162,16 @@ describe('buildPushArgv', () => {
     expect(argv).toEqual(['zsh', '-ic', `git push -u origin 'main'`])
   })
 
+  it('should substitute a non-origin remote in whole-token and substring forms', () => {
+    expect(buildPushArgv('my-push {{BRANCH}} {{REMOTE}}', { branch: 'feat/x', remote: 'github' })).toEqual([
+      'my-push',
+      'feat/x',
+      'github',
+    ])
+    const argv = buildPushArgv(`zsh -ic 'git push --repo={{REMOTE}} {{BRANCH}}'`, { branch: 'main', remote: 'upstream' })
+    expect(argv).toEqual(['zsh', '-ic', `git push --repo='upstream' 'main'`])
+  })
+
   it('should escape hostile branch inside double-quoted shell region', () => {
     const argv = buildPushArgv(`zsh -ic 'git push origin "{{BRANCH}}"'`, {
       branch: 'm"$(id)`x`',

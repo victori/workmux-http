@@ -1,0 +1,60 @@
+{
+  "wt_b456a632633f": [
+    {
+      "name": "origin",
+      "url": "git@gitea.example.com:ai/sample-app-alpha.git",
+      "hasRef": true,
+      "unpushed": 2,
+      "behind": 0,
+      "upstream": true
+    },
+    {
+      "name": "github",
+      "url": "git@github.com:acme/sample-app-alpha.git",
+      "hasRef": false,
+      "unpushed": null,
+      "behind": null,
+      "upstream": false
+    }
+  ],
+  "wt_6af13e5a1704": [
+    {
+      "name": "origin",
+      "url": "git@gitea.example.com:ai/sample-app-beta.git",
+      "hasRef": true,
+      "unpushed": 0,
+      "behind": 0,
+      "upstream": true
+    }
+  ],
+  "wt_107455a78136": [
+    {
+      "name": "origin",
+      "url": "git@gitea.example.com:ai/sample-app-alpha.git",
+      "hasRef": true,
+      "unpushed": 0,
+      "behind": 0,
+      "upstream": true
+    }
+  ],
+  "wt_c71e94902f0c": [
+    {
+      "name": "origin",
+      "url": "git@gitea.example.com:ai/sample-app-beta.git",
+      "hasRef": true,
+      "unpushed": 0,
+      "behind": 0,
+      "upstream": true
+    }
+  ],
+  "wt_44b45f864288": [
+    {
+      "name": "origin",
+      "url": "git@gitea.example.com:ai/sample-app-gamma.git",
+      "hasRef": true,
+      "unpushed": 0,
+      "behind": 0,
+      "upstream": true
+    }
+  ]
+}

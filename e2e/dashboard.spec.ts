@@ -8,6 +8,8 @@ test.describe('managed dashboard (fixture mode)', () => {
     await expect(page.getByText('Data may be outdated')).toHaveCount(0)
     await expect(page.getByText('feat-timezone').first()).toBeVisible()
     await expect(page.getByText('Waiting', { exact: false }).first()).toBeVisible()
+    const agentCard = page.getByRole('button', { name: /feat-timezone/ }).filter({ has: page.getByTitle('Agent: claude') })
+    await expect(agentCard.getByTitle('Agent: claude')).toBeVisible()
 
     await page.getByRole('tab', { name: /worktrees/i }).or(page.getByRole('button', { name: /worktrees/i })).first().click()
     await expect(page.getByText('fix-jobs').first()).toBeVisible()

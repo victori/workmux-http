@@ -98,13 +98,35 @@ export function WorktreeCard({
           {worktree.isMain && (
             <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-fg-muted">main</span>
           )}
-          {(worktree.unpushed ?? 0) > 0 && (
-            <span
-              title={`${worktree.unpushed} unpushed commit${worktree.unpushed === 1 ? '' : 's'}`}
-              className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tabular-nums text-accent"
-            >
-              ↑{worktree.unpushed}
-            </span>
+          {worktree.remotes && worktree.remotes.length > 0 ? (
+            worktree.remotes.map((r) => {
+              const n = r.unpushed ?? 0
+              if (r.hasRef && n === 0) return null
+              return (
+                <span
+                  key={r.name}
+                  title={
+                    r.hasRef
+                      ? `${n} unpushed commit${n === 1 ? '' : 's'} to ${r.name}`
+                      : `never pushed to ${r.name}`
+                  }
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums ${
+                    r.hasRef ? 'bg-accent/15 text-accent' : 'bg-surface-2 text-fg-muted'
+                  }`}
+                >
+                  {r.name} {r.hasRef ? `↑${n}` : 'new'}
+                </span>
+              )
+            })
+          ) : (
+            (worktree.unpushed ?? 0) > 0 && (
+              <span
+                title={`${worktree.unpushed} unpushed commit${worktree.unpushed === 1 ? '' : 's'}`}
+                className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tabular-nums text-accent"
+              >
+                ↑{worktree.unpushed}
+              </span>
+            )
           )}
           {worktree.hasUncommittedChanges && (
             <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-medium text-warn">dirty</span>

@@ -344,6 +344,26 @@ describe('GitHub status join', () => {
     }
   })
 
+  test('should attach per-remote statuses to worktree views', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-disc3-'))
+    try {
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: repo })
+      execFileSync('git', ['remote', 'add', 'backup', 'https://gitea.example.com/acme/widgets.git'], { cwd: repo })
+      writeFileSync(path.join(repo, 'f.txt'), 'x\n')
+      execFileSync('git', ['add', 'f.txt'], { cwd: repo })
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'init'], { cwd: repo })
+      const discovery = new Discovery(cfg, fakeTmux([]), fakeWorkmux([worktreeRecord('wt-a', { path: repo, branch: 'main' })], []))
+      const snap = await discovery.snapshot(true)
+      expect(snap.worktrees[0]?.remotes).toEqual([
+        { name: 'origin', url: 'https://github.com/acme/widgets.git', hasRef: false, unpushed: null, behind: null, upstream: false },
+        { name: 'backup', url: 'https://gitea.example.com/acme/widgets.git', hasRef: false, unpushed: null, behind: null, upstream: false },
+      ])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('should mark non-GitHub worktrees unsupported without any provider call', async () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-disc2-'))
     try {

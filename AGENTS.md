@@ -97,7 +97,11 @@ it the default in code or docs.
   `@wmhttp_owned`); never auto-retry
   ambiguous delivery (`UnknownDeliveryError` → 502 `delivery_unknown`);
   degrade with `stale` markers, never fabricate empty data; gate
-  repo-controlled revisions with `SAFE_REV`.
+  repo-controlled revisions with `SAFE_REV`; push names one explicit remote
+  (`git push [-u] <remote> <branch>`, never bare/force) resolved
+  request→upstream→origin→sole, bound into the token with the `-u` decision
+  and re-checked against `git remote` at prepare AND execute (`SAFE_REMOTE`
+  rejects `ext::` helpers).
 - Adapters expose structural interfaces (`TmuxLike`) so unit tests inject
   fakes — keep them current when adding tmux calls.
 - Ids: opaque `wt_<sha1[:12]>` worktrees, tmux `%N` pane ids; mint via
@@ -290,7 +294,7 @@ and review the diff for undocumented behavior changes.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  477 tests green baseline.
+  501 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

@@ -1,6 +1,6 @@
 import { access, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentStatus, AgentView, DashboardSnapshot, GithubStatus, GitInfo, ProjectInfo, SourceState, WorktreeView } from '../../shared/types.js'
+import type { AgentStatus, AgentView, DashboardSnapshot, GithubStatus, GitInfo, ProjectInfo, RemoteStatus, SourceState, WorktreeView } from '../../shared/types.js'
 import type { AppConfig } from '../config.js'
 import { BOUNDS } from '../config.js'
 import type { TmuxLike, TmuxPane } from '../adapters/tmux.js'
@@ -205,11 +205,18 @@ export class Discovery {
     const worktreeViews: WorktreeView[] = []
     const githubRequests: GithubRequest[] = []
     const fixtureGithub = this.cfg.fixtureDir ? await loadFixtureGithub(this.cfg.fixtureDir) : null
+    const fixtureRemotes = this.cfg.fixtureDir ? await loadFixtureRemotes(this.cfg.fixtureDir) : null
     for (const w of list ?? []) {
       const id = worktreeId(w.project, w.path)
       const gi = await this.gitInfoFor(w.path)
       if (gi === undefined) gitDegraded = true
       const github = this.githubFor(id, w, gi, githubRequests, fixtureGithub)
+      const remoteBranch = gi && !gi.unborn && gi.branch && !gi.branch.startsWith('(') ? gi.branch : null
+      const remotes = this.cfg.fixtureDir
+        ? fixtureRemotes?.get(id)
+        : remoteBranch
+          ? await git.remoteStatuses(w.path, remoteBranch, BOUNDS.maxRemotesPerRepo).catch(() => undefined)
+          : undefined
       worktreeViews.push({
         id,
         project: w.project,
@@ -227,6 +234,7 @@ export class Discovery {
         createdAt: w.created_at,
         prUrl: github?.state === 'ready' && github.pr ? github.pr.url : null,
         unpushed: gi?.ahead ?? null,
+        remotes,
         github,
       })
     }
@@ -356,6 +364,22 @@ async function loadFixtureGithub(fixtureDir: string): Promise<Map<string, Github
     for (const [id, value] of Object.entries(raw)) {
       if (value && typeof value === 'object' && typeof (value as { state?: unknown }).state === 'string') {
         out.set(id, value as GithubStatus)
+      }
+    }
+    return out
+  } catch {
+    return new Map()
+  }
+}
+
+/** Fixture per-remote statuses keyed by worktree id; missing file = no entries. */
+async function loadFixtureRemotes(fixtureDir: string): Promise<Map<string, RemoteStatus[]>> {
+  try {
+    const raw = JSON.parse(await readFile(path.join(fixtureDir, 'remotes.json'), 'utf8')) as Record<string, unknown>
+    const out = new Map<string, RemoteStatus[]>()
+    for (const [id, value] of Object.entries(raw)) {
+      if (Array.isArray(value) && value.every((r) => r && typeof r === 'object' && typeof (r as { name?: unknown }).name === 'string')) {
+        out.set(id, value as RemoteStatus[])
       }
     }
     return out

@@ -78,7 +78,7 @@ way. Static SPA responses: HTML is `no-cache`, hashed assets immutable.
 | `POST /api/worktrees/:id/commit` | run kind's commit command (async op) |
 | `POST /api/worktrees/:id/hunk-comments` | attach review comment to a hunk |
 | `POST /api/worktrees` | create worktree + window (async op) |
-| `POST /api/actions/prepare` | mint single-use confirm token for merge/push/remove/stop |
+| `POST /api/actions/prepare` | mint single-use confirm token for merge/push/remove/stop (push accepts `remote` + `setUpstream`, bound into the token) |
 | `POST /api/actions/execute` | consume token, run action (async op) |
 | `POST /api/sweeps/scan` | collect clean-sweep evidence (async op `sweep-scan`, 202) |
 | `POST /api/sweeps/prepare` | re-verify selection against fresh evidence, mint sweep token |
@@ -160,6 +160,14 @@ stale is not an HTTP error.
 11. **INV-11 — Terminal is session-wide and honestly disclosed**: attach validates
     the requested pane but tmux focus is per-window; `attached.activePaneId` +
     2 s watchdog emit `pane-changed` and the UI names the keystroke target.
+12. **INV-12 — Push targets one explicit remote**: the remote is resolved
+    (`request.remote` → upstream remote → `origin` → sole remote), bound into
+    the confirm-token state key together with the `-u` decision, and its
+    membership in `git remote` output is re-checked at prepare AND execute
+    (names also pass `SAFE_REMOTE`, which rejects `ext::`-style helpers).
+    Push argv is always `git push [-u] <remote> <branch>` — never bare,
+    never any force variant. `-u` applies only when the branch has no
+    upstream or the user opted in.
 
 ### Invariant-to-test mapping
 
@@ -178,16 +186,17 @@ and any applicable gap below when reporting verification.
 | Invariant | Regression tests | Coverage limits / gaps |
 |---|---|---|
 | `INV-01` | `server/services/input.test.ts::should reject unmanaged targets`<br>`server/services/management.commit.test.ts::should 404 for unmanaged worktrees`<br>`server/services/discovery.test.ts::should not treat kind-less panes as message targets`<br>`server/services/sweep.test.ts::should reject unmanaged sweep targets`<br>`server/services/sweep.test.ts::should force-refresh discovery for evidence and reject vanished targets` | Rejection and discovery filtering are covered; no dedicated regression for a target disappearing while its mutation is queued. Sweep targets are additionally revalidated against a forced discovery refresh at execute. |
-| `INV-02` | `server/services/management.hunks.test.ts::should reject a second execute of the same token`<br>`server/services/management.hunks.test.ts::should let exactly one of two concurrent executes through`<br>`server/services/management.hunks.test.ts::should reject execute once the token TTL elapsed even without a later prepare (F08)`<br>`server/services/management.push.test.ts::should reject execute when HEAD moved after prepare`<br>`server/services/sweep.test.ts::should consume sweep tokens before concurrent execution`<br>`server/services/sweep.test.ts::should skip remaining rows when the token expires mid-execution` | Single use, expiry, and HEAD drift are covered; no exact TTL-boundary or state-changing-queued regression. Sweep re-checks token expiry per row and re-verifies frozen evidence keys before each removal. |
+| `INV-02` | `server/services/management.hunks.test.ts::should reject a second execute of the same token`<br>`server/services/management.hunks.test.ts::should let exactly one of two concurrent executes through`<br>`server/services/management.hunks.test.ts::should reject execute once the token TTL elapsed even without a later prepare (F08)`<br>`server/services/management.push.test.ts::should reject execute when HEAD moved after prepare`<br>`server/services/management.push.test.ts::should bind the selected remote into the confirm token`<br>`server/services/sweep.test.ts::should consume sweep tokens before concurrent execution`<br>`server/services/sweep.test.ts::should skip remaining rows when the token expires mid-execution` | Single use, expiry, and HEAD drift are covered; no exact TTL-boundary or state-changing-queued regression. Sweep re-checks token expiry per row and re-verifies frozen evidence keys before each removal. |
 | `INV-03` | `server/services/management.hunks.test.ts::should serialize executes for one target until the first operation settles (F03)`<br>`server/services/target-locks.test.ts::should hold a worktree lock until its returned operation settles`<br>`server/services/target-locks.test.ts::should serialize a sweep callback behind a management operation`<br>`server/services/sweep.test.ts::should not hold the parent operation while a target lock is busy` | Shared TargetLocks coordinator covered for job-return vs operation-settlement and cross-service serialization. External CLI/agent mutations are outside the web lock. |
 | `INV-04` | `integration/tmux.integration.test.ts::should capture and send without changing active window/pane or size elsewhere`<br>`integration/tmux.integration.test.ts::should keep grouped session window selection independent from parent`<br>`integration/tmux.integration.test.ts::should refuse to kill sessions lacking the ownership marker`<br>`integration/tmux.integration.test.ts::should attach at exact pane size, resize only when asked, and clean up`<br>`src/features/terminal/TerminalView.test.tsx::resize button opens a confirm dialog; cancel sends nothing` | Real-tmux checks require tmux; the geometry check also requires native node-pty and can skip. The confirmation UI uses mocks; physical Safari is not covered. |
 | `INV-05` | `server/services/input.test.ts::should report unknown delivery on ambiguous failure without retry` | Service-level simulated failure; no HTTP 502 regression or real disconnect during paste/Enter. |
 | `INV-06` | `server/services/discovery.test.ts::should mark source errors and stay stale when tmux fails, keeping last good data`<br>`server/services/discovery.test.ts::should treat empty observations as valid empty snapshot`<br>`src/features/agent/OutputPane.test.tsx::keeps the last snapshot and shows a notice on transient failure, then recovers`<br>`server/services/discovery.test.ts::should join service status without blocking the snapshot build`<br>`src/components/PrCiStatus.test.tsx::discloses unavailable and loading states without claiming offline`<br>`server/services/sweep.test.ts::should skip rows whose sources degraded before removal` | tmux and Reader failure paths are covered; not every discovery-source failure combination. GitHub failure coverage is fixture/mock-level (no live rate-limit proof). Sweep treats unverifiable evidence as a blocker, never as clean. |
 | `INV-07` | `server/adapters/git.test.ts::should list unmerged paths as conflicts` | Partial: conflict listing is covered; no dedicated service regression for conflict exclusion from bulk add and unstage. |
-| `INV-08` | `server/adapters/git.test.ts::should reject unsafe revisions`<br>`server/security.routes.test.ts::rejects range syntax in the sha parameter`<br>`server/adapters/sweep-git.test.ts::should flag refs that fail SAFE_REV`<br>`server/adapters/sweep-git.test.ts::should never execute hostile remote helper urls` | Commit-diff rejection is covered; no dedicated hostile .workmux.yaml base or merge-ref regression. Sweep base resolution and remote queries refuse unsafe refs and `ext::`-style remotes. |
+| `INV-08` | `server/adapters/git.test.ts::should reject unsafe revisions`<br>`server/security.routes.test.ts::rejects range syntax in the sha parameter`<br>`server/adapters/sweep-git.test.ts::should flag refs that fail SAFE_REV`<br>`server/adapters/sweep-git.test.ts::should never execute hostile remote helper urls`<br>`server/adapters/git.test.ts::should refuse unsafe or unconfigured remote names` | Commit-diff rejection is covered; no dedicated hostile .workmux.yaml base or merge-ref regression. Sweep base resolution and remote queries refuse unsafe refs and `ext::`-style remotes. |
 | `INV-09` | `server/services/management.hunks.test.ts::should reject stale snapshots without touching the index`<br>`server/services/management.hunks.test.ts::should reject foreign patch text as piece` | Real temporary git index checks; no dedicated HTTP snapshot_stale status regression. |
 | `INV-10` | `src/hooks/useDashboard.test.ts::is online when all sources are healthy even if agents are idle-stale`<br>`src/hooks/useDashboard.test.ts::is stale when some sources failed`<br>`src/hooks/useDashboard.test.ts::is stale when polling stalled past the timeout`<br>`src/hooks/useDashboard.poll.test.ts::reports online immediately after resume (no stale flash)`<br>`server/services/github-status.test.ts::should preserve last good PR data with a stale marker`<br>`server/services/github-status.test.ts::should discard late completions for departed keys` | Derived-state and mocked polling checks; no real VPN outage or physical Safari background/resume proof. GitHub TTL/backoff verified with fake timers only. |
 | `INV-11` | `server/services/terminal.hub.test.ts::reports the window active pane on attach even when it differs from the agent`<br>`server/services/terminal.hub.test.ts::emits pane-changed when the window active pane moves while attached`<br>`src/features/terminal/TerminalView.test.tsx::discloses when the window active pane differs from the agent (F05)` | Hub and UI use mocks; no split-pane live integration check of disclosure updates. |
+| `INV-12` | `server/services/management.push.test.ts::should push a secondary remote without touching upstream by default`<br>`server/services/management.push.test.ts::should set upstream on the secondary remote when asked`<br>`server/services/management.push.test.ts::should bind the selected remote into the confirm token`<br>`server/services/management.push.test.ts::should require an explicit choice when no default remote exists`<br>`server/adapters/git.test.ts::should refuse unsafe or unconfigured remote names`<br>`server/adapters/git.test.ts::should push to another remote without moving upstream` | Remote deletion between prepare and execute changes the state key (covered by the binding test's sibling drift assertions); per-remote behind-counts proven against local refs only — remote-side races remain bounded by git's non-fast-forward rejection. |
 
 ### GitHub PR/CI visibility (optional overlay)
 
@@ -317,9 +326,10 @@ the visible viewport, never the expanded grid.
 ## 8. UI capability inventory (behavioral, not visual)
 
 - **Dashboard**: agents/worktrees tabs, search/sort/filters (agent search
-  matches project, name, and branch), per-agent branch label (when git info
-  is available), per-agent
-  pending badge (`●N`), unpushed indicator, connection banner, PR/CI status
+  matches project, name, and branch), per-agent kind badge before the project
+  using the reported `agentKind` when present, per-agent branch label (when
+  git info is available), per-agent pending badge (`●N`), per-remote unpushed badges (`origin ↑2`, muted `github new` for never-pushed; aggregate `↑N` fallback when per-remote state is unavailable),
+  connection banner, PR/CI status
   badges (PR number/state/review link + CI rollup badge with counts, check
   list, stale age, honest unknown/unavailable/unsupported disclosure;
   rendered outside card navigation buttons).
@@ -338,7 +348,11 @@ the visible viewport, never the expanded grid.
 - **Diff view**: file sidebar, wip/branch modes, hunk stage/unstage/split +
   comments, pending-changes section (Add ↔ Restore flip per staged state,
   Add all / Restore all), Commit-now box (disabled when clean), push button
-  with commit-body review + per-action ack.
+  with commit-body review + per-action ack + remote picker (radiogroup of
+  configured remotes with per-remote counts/`new`/`upstream` tags, opt-in
+  set-upstream checkbox; switching re-prepares for a fresh token; picker
+  locks to a read-only target when a configured push command owns the
+  remote).
 - **Worktrees**: create form (project/branch/prompt/profile), merge/remove/
   stop behind exact-target confirm dialogs.
 - **Palette + shortcuts**: Alt+←, Esc, `:`, ⌘P, `/`, j/k, 1-9.

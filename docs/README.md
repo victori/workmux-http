@@ -52,6 +52,7 @@ Statuses below reflect existing completion records, not new live verification.
 | Pending changes and configurable commit | [Combined design and plan](superpowers/plans/2026-11-07-untracked-commit-plan.md) | implemented |
 | Push and unpushed indicator | [Combined design and plan](superpowers/plans/2026-11-07-push-button-plan.md) | implemented |
 | Pending-changes badge | [Combined design and plan](superpowers/plans/2026-11-07-pending-changes-badge-plan.md) | implemented |
+| Dashboard agent kind badge | [Combined design and plan](superpowers/plans/2026-11-14-dashboard-agent-kind.md) | implemented |
 | OMP status reconciliation | [Investigation and plan](superpowers/plans/2026-11-07-omp-status-reconciliation-plan.md) | draft; not implemented per 2026-11-08 record |
 | Restore staged files | [Combined design and plan](superpowers/plans/2026-11-08-unstage-pending-plan.md) | implemented |
 | Commit history | [Combined design and plan](superpowers/plans/2026-11-08-commit-log-plan.md) | implemented |

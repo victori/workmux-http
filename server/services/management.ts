@@ -12,9 +12,10 @@ import type {
   PreparedAction,
   CreateWorktreeRequest,
   OperationView,
+  RemoteStatus,
 } from '../../shared/types.js'
 import { BOUNDS, type AppConfig } from '../config.js'
-import { buildCommitArgv, buildPushArgv } from '../commitCmd.js'
+import { buildCommitArgv, buildPushArgv, PUSH_REMOTE_PLACEHOLDER } from '../commitCmd.js'
 import type { TmuxLike } from '../adapters/tmux.js'
 import { Workmux } from '../adapters/workmux.js'
 import * as git from '../adapters/git.js'
@@ -329,6 +330,10 @@ export class Management {
     key: string
     commits?: Array<{ sha: string; subject: string }>
     commitsTruncated?: boolean
+    remote?: string
+    remotes?: RemoteStatus[]
+    remoteLocked?: boolean
+    setUpstream?: boolean
   }> {
     const warnings: string[] = []
     let blocked: string | undefined
@@ -336,6 +341,10 @@ export class Management {
     let commits: Array<{ sha: string; subject: string }> | undefined
     let commitsTruncated: boolean | undefined
     let keyExtra: string[] | undefined
+    let remote: string | undefined
+    let remotes: RemoteStatus[] | undefined
+    let remoteLocked: boolean | undefined
+    let setUpstream: boolean | undefined
 
     if (req.action === 'stop') {
       const agent = (await this.discovery.agentTargets()).get(req.targetId)
@@ -374,38 +383,69 @@ export class Management {
           blocked = 'detached HEAD; checkout a branch before pushing'
         } else if (!git.SAFE_REV.test(st.branch)) {
           blocked = 'branch name is not push-safe'
-        } else if (!(await git.hasOrigin(wt.path))) {
-          blocked = 'no origin remote configured'
         } else {
-          const un = await git.unpushedCommits(wt.path, st.branch, BOUNDS.maxPushCommitsList)
-          commits = un.commits
-          commitsTruncated = un.truncated
-          keyExtra = [st.oid, String(un.commits.length), un.ref ?? 'first-push']
-          if (un.ref === null && un.commits.length === 0) {
-            blocked = 'nothing to push'
-          } else if (un.ref !== null && st.ahead === 0 && !st.hasUpstream) {
-            blocked = 'nothing to push'
-          } else if (un.ref === null) {
-            warnings.push(
-              (await this.pushCmdForWorktree(req.targetId))
-                ? 'no upstream; the configured push command decides how the branch is published'
-                : `no upstream; this creates origin/${st.branch} and sets upstream`,
-            )
-          }
-          if (st.hasUpstream && st.ahead === 0) blocked = 'nothing to push — branch is up to date with upstream'
-          if (st.hasUpstream && st.behind > 0) {
-            warnings.push(`remote has ${st.behind} newer commit(s); push will be rejected until you merge`)
+          const remoteStatus = await git.remoteStatuses(wt.path, st.branch, BOUNDS.maxRemotesPerRepo)
+          if (remoteStatus.length === 0) {
+            blocked = 'no remote configured'
+          } else {
+            remotes = remoteStatus
+            if (req.remote !== undefined && !remoteStatus.some((r) => r.name === req.remote)) {
+              throw new BadRequestError(`remote '${req.remote}' is not configured`)
+            }
+            const upstreamName = remoteStatus.find((r) => r.upstream)?.name ?? null
+            const resolved =
+              req.remote
+              ?? upstreamName
+              ?? (remoteStatus.some((r) => r.name === 'origin')
+                ? 'origin'
+                : remoteStatus.length === 1
+                  ? remoteStatus[0]!.name
+                  : null)
+            const cmd = await this.pushCmdForWorktree(req.targetId)
+            // A configured command without {{REMOTE}} publishes wherever it wants;
+            // the picker shows the resolved default but stays locked.
+            remoteLocked = cmd !== null && !cmd.includes(PUSH_REMOTE_PLACEHOLDER)
+            if (resolved === null) {
+              blocked = 'multiple remotes configured; specify which one to push to'
+            } else {
+              remote = resolved
+              const sel = remoteStatus.find((r) => r.name === resolved)!
+              // A configured command owns its flags: no -u decision to echo.
+              setUpstream = cmd !== null ? undefined : req.setUpstream ?? upstreamName === null
+              const un = await git.unpushedCommits(wt.path, st.branch, BOUNDS.maxPushCommitsList, resolved)
+              commits = un.commits
+              commitsTruncated = un.truncated
+              keyExtra = [
+                st.oid,
+                String(un.commits.length),
+                `${resolved}:${sel.hasRef ? String(sel.unpushed ?? 0) : 'first'}`,
+                String(setUpstream),
+              ]
+              if (!sel.hasRef) {
+                warnings.push(
+                  cmd !== null
+                    ? `no ${resolved}/${st.branch}; the configured push command decides how the branch is published`
+                    : `no ${resolved}/${st.branch}; this creates it${setUpstream ? ' and sets upstream' : ''}`,
+                )
+              } else if (sel.unpushed === 0) {
+                blocked = `nothing to push — ${resolved} is up to date`
+              }
+              if (sel.hasRef && sel.behind !== null && sel.behind > 0) {
+                warnings.push(`${resolved} has ${sel.behind} newer commit(s); push will be rejected until you merge`)
+              }
+            }
           }
         }
       }
     }
 
     const key = confirmTokenOf([req.action, req.targetId, label, warnings.join('|'), blocked ?? '', ...(keyExtra ?? [])])
-    return { label, warnings, blocked, key, commits, commitsTruncated }
+    return { label, warnings, blocked, key, commits, commitsTruncated, remote, remotes, remoteLocked, setUpstream }
   }
 
   async prepare(req: PrepareActionRequest): Promise<PreparedAction> {
-    const { label, warnings, blocked, key, commits, commitsTruncated } = await this.evaluateAction(req)
+    const { label, warnings, blocked, key, commits, commitsTruncated, remote, remotes, remoteLocked, setUpstream } =
+      await this.evaluateAction(req)
     const token = randomBytes(16).toString('hex')
     this.pruneTokens()
     this.issued.set(token, { at: Date.now(), key })
@@ -419,6 +459,10 @@ export class Management {
       blocked,
       commits,
       commitsTruncated,
+      remote,
+      remotes,
+      remoteLocked,
+      setUpstream,
     }
   }
 
@@ -452,6 +496,8 @@ export class Management {
         requiresConfirmation: true,
         warnings: evaluated.warnings,
         blocked: evaluated.blocked,
+        remote: evaluated.remote,
+        setUpstream: evaluated.setUpstream,
       }
       return this.runAction(req.action, prepared, req.acceptWarnings === true)
     })
@@ -497,13 +543,13 @@ export class Management {
         if (!st || st.branch === null || !git.SAFE_REV.test(st.branch)) {
           throw new BadRequestError('branch is not push-safe')
         }
-        const setUpstream = !st.hasUpstream
+        const remote = prepared.remote ?? 'origin'
         const cmd = await this.pushCmdForWorktree(prepared.targetId)
-        const argv = cmd ? buildPushArgv(cmd, { branch: st.branch, remote: 'origin' }) : null
+        const argv = cmd ? buildPushArgv(cmd, { branch: st.branch, remote }) : null
         return this.operations.start('push', prepared.targetLabel, async () => {
           const res = argv
             ? await git.runPush(wt.path, argv, this.cfg.pushTimeoutMs)
-            : await git.push(wt.path, st.branch as string, setUpstream, this.cfg.pushTimeoutMs)
+            : await git.pushTo(wt.path, remote, st.branch as string, prepared.setUpstream === true, this.cfg.pushTimeoutMs)
           const out = `${res.stdout}\n${res.stderr}`.trim()
           if (res.code !== 0) return { output: out, error: `push failed (exit ${res.code}): ${out}` }
           return { output: out || 'pushed' }

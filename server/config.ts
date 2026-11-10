@@ -117,6 +117,7 @@ export const BOUNDS = {
   maxCommitOutputBytes: 4096,
   maxPushCommitsList: 20,
   maxPushCommitBodyBytes: 2000,
+  maxRemotesPerRepo: 8,
   githubTimeoutMs: 10000,
   githubJobTimeoutMs: 30000,
   githubPrLimit: 100,

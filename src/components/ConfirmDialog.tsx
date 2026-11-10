@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { RemoteStatus } from '@shared/types'
 
 export interface ConfirmDialogProps {
   title: string
@@ -10,6 +11,16 @@ export interface ConfirmDialogProps {
   commitsTruncated?: boolean
   /** Reason the action cannot run even with confirmation. */
   blocked?: string
+  /** For 'push': configured remotes to choose from. */
+  remotes?: RemoteStatus[]
+  /** For 'push': the currently resolved/selected remote. */
+  remote?: string
+  /** True when a configured push command owns the remote (picker locked). */
+  remoteLocked?: boolean
+  /** Effective -u decision; undefined when a custom command owns the flags. */
+  setUpstream?: boolean
+  onRemoteChange?: (name: string) => void
+  onSetUpstreamChange?: (value: boolean) => void
   confirmLabel: string
   /** Ack checkbox text; defaults to the generic warnings wording. */
   ackLabel?: string
@@ -26,6 +37,12 @@ export function ConfirmDialog({
   commits,
   commitsTruncated,
   blocked,
+  remotes,
+  remote,
+  remoteLocked,
+  setUpstream,
+  onRemoteChange,
+  onSetUpstreamChange,
   confirmLabel,
   ackLabel,
   requireAck,
@@ -50,6 +67,56 @@ export function ConfirmDialog({
         <p className="mt-2 break-all rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm text-fg">
           {targetLabel}
         </p>
+        {remotes && remotes.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">Push target</p>
+            {remoteLocked ? (
+              <p className="mt-1 rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm text-fg">
+                {remote}
+                <span className="ml-2 font-sans text-xs text-fg-muted">configured command decides</span>
+              </p>
+            ) : (
+              <div role="radiogroup" aria-label="Push target remote" className="mt-1 space-y-1">
+                {remotes.map((r) => (
+                  <label
+                    key={r.name}
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                      r.name === remote ? 'bg-surface-2 text-fg' : 'text-fg-muted hover:bg-surface-2'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="push-remote"
+                      value={r.name}
+                      aria-label={r.name}
+                      checked={r.name === remote}
+                      onChange={() => onRemoteChange?.(r.name)}
+                      className="h-4 w-4"
+                    />
+                    <span className="font-mono">{r.name}</span>
+                    {r.upstream && (
+                      <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">upstream</span>
+                    )}
+                    <span className="ml-auto font-mono text-xs tabular-nums text-fg-muted">
+                      {r.hasRef ? `↑${r.unpushed ?? '?'}` : 'new'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {!remoteLocked && setUpstream !== undefined && remote !== undefined && (
+              <label className="mt-2 flex min-h-11 items-center gap-2 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={setUpstream}
+                  onChange={(e) => onSetUpstreamChange?.(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Set {remote} as upstream
+              </label>
+            )}
+          </div>
+        )}
         {commits && commits.length > 0 && (
           <div className="mt-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">

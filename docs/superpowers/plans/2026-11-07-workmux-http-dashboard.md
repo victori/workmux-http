@@ -950,3 +950,47 @@ original requirements above remain in force unless noted.
   (1 scan = 1 forced refresh, prepare = 1 more) and repeat-click
   suppression (prepare/execute each called exactly once under gated
   promises). Sweep e2e green with named selectors.
+
+### 2026-11-10: multi-remote push support
+
+- Added: push was origin-centric (`push -u origin`, `{{REMOTE}}` hardcoded to
+  `'origin'`, single upstream badge). Now the push confirm flow carries a
+  **remote picker** (radiogroup of configured remotes with per-remote
+  `↑N`/`new`/`upstream` tags), the picked remote + `-u` decision are bound
+  into the confirm-token state key, and `git push` always names the remote
+  explicitly (`git push [-u] <remote> <branch>`). Resolution chain:
+  `request.remote` → upstream remote → `origin` → sole remote → blocked.
+- Decisions (owner-approved): selector + per-remote badges (no push-all);
+  smart `-u` (only when no upstream, or user ticks "set as upstream";
+  never re-points an existing tracking unless asked); a custom
+  `WORKMUX_<KIND>_PUSH_CMD` receives the picked remote via `{{REMOTE}}`, and
+  a command with no `{{REMOTE}}` token locks the picker (it owns the remote).
+- Security: remote names validated by `SAFE_REMOTE` (no colons ⇒ `ext::`
+  helper names rejected at the zod layer) AND re-checked for membership in
+  `git remote` output at prepare and execute (added to INV-08 family; new
+  INV-12 covers explicit-remote + token binding + `-u` rule). Deleting a
+  remote or switching the pick between prepare and execute changes the state
+  key → `confirmation_required`, forcing re-review.
+- New contract surface (`shared/types.ts`, additive): `RemoteStatus`
+  (`name,url,hasRef,unpushed,behind,upstream`), `WorktreeView.remotes?`
+  (absent = git unhealthy, never fabricated), `remote`/`setUpstream`/
+  `remotes`/`remoteLocked` on prepare/execute. `unpushedCommits` gained an
+  optional `remote` arg so the dialog lists what publishes to the *selected*
+  remote. Bounded by `BOUNDS.maxRemotesPerRepo` (8); per-remote counts use
+  local refs only (no network).
+- UI: `ConfirmDialog` gained the remote section; `AgentCard` re-prepares on
+  remote/flag change and carries the pick into execute; `WorktreeCard` shows
+  per-remote badges with an aggregate `↑N` fallback.
+- Verification delta: +24 vitest (501 total) — git adapter multi-remote
+  status + `pushTo` safety (real bare remotes), management resolution chain /
+  token binding / custom-cmd lock / explicit-choice-required, discovery
+  per-remote attach, commitCmd non-origin substitution, ConfirmDialog picker +
+  set-upstream + locked states, WorktreeCard badges; +2 e2e (45 total)
+  intercepted remote picker + badge flow on fixtures. Real-git `-u` semantics
+  proven in `management.push.test.ts` (secondary push leaves upstream; opt-in
+  re-points it). Full gate green.
+- Separate fix (unrelated to multi-remote): `integration/sweep.integration
+  .test.ts` hardcoded the old `main__worktrees/<name>` layout; workmux 0.1.281
+  places worktrees at `<repo>/.worktrees/<name>`. Harness now captures the
+  real path from `workmux add` output (version-tolerant). Production was
+  unaffected (discovery reads paths from `workmux list`).

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { run } from '../exec.js'
 import { BOUNDS } from '../config.js'
 import { parseDiff, type ParsedFile } from '../hunks.js'
-import type { CommitInfo, CommitListResponse } from '../../shared/types.js'
+import type { CommitInfo, CommitListResponse, RemoteStatus } from '../../shared/types.js'
 import type { GithubRequest } from './github.js'
 
 export interface RepoStatus {
@@ -299,6 +299,11 @@ export async function resolveBase(cwd: string): Promise<string | null> {
 // against argv option injection via repo-controlled .workmux.yaml values.
 export const SAFE_REV = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 
+// Remote names: alnum start, no colons (blocks `ext::` helper names), no
+// whitespace or option-looking tokens; membership in `git remote` output is
+// re-checked at prepare and execute.
+export const SAFE_REMOTE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
 async function readWorkmuxBase(cwd: string): Promise<string | null> {
   for (const name of ['.workmux.yaml', '.workmux.yml']) {
     try {
@@ -397,29 +402,97 @@ export interface UnpushedResult {
   ref: string | null
 }
 
-/** `origin` remote configured. */
-export async function hasOrigin(cwd: string): Promise<boolean> {
-  const res = await run(['git', 'remote', 'get-url', 'origin'], { cwd }).catch(() => null)
-  return res !== null && res.code === 0
+/** Configured remotes: name + fetch url; origin first, then alphabetical. */
+export async function remoteNames(cwd: string): Promise<Array<{ name: string; url: string }>> {
+  const res = await run(['git', 'remote', '-v'], { cwd }).catch(() => null)
+  if (res === null || res.code !== 0) return []
+  const byName = new Map<string, string>()
+  for (const line of res.stdout.split('\n')) {
+    const m = /^(\S+)\s+(\S+)\s+\(fetch\)$/.exec(line.trim())
+    const name = m?.[1]
+    const url = m?.[2]
+    if (name !== undefined && url !== undefined && !byName.has(name)) byName.set(name, url)
+  }
+  const out = [...byName.entries()].map(([name, url]) => ({ name, url }))
+  out.sort((a, b) =>
+    a.name === 'origin' ? -1 : b.name === 'origin' ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  )
+  return out
+}
+
+/** Remote component of the upstream ref (longest configured-name match), else null. */
+async function upstreamRemote(cwd: string): Promise<string | null> {
+  const up = await run(['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd })
+  const ref = up.code === 0 ? up.stdout.trim() : ''
+  if (!ref || !ref.includes('/')) return null
+  const candidates = await remoteNames(cwd)
+  let best: string | null = null
+  for (const r of candidates) {
+    if (ref.startsWith(`${r.name}/`) && (best === null || r.name.length > best.length)) best = r.name
+  }
+  return best
+}
+
+/**
+ * Per-remote publish state for `branch` (local refs only — never network).
+ * `unpushed` = commits on HEAD missing from <remote>/<branch>; null when
+ * the remote-tracking ref is absent (never pushed there) or unresolvable.
+ */
+export async function remoteStatuses(cwd: string, branch: string, cap: number): Promise<RemoteStatus[]> {
+  const remotes = (await remoteNames(cwd)).slice(0, cap)
+  if (remotes.length === 0) return []
+  const upRemote = await upstreamRemote(cwd)
+  const branchOk = SAFE_REV.test(branch)
+  const out: RemoteStatus[] = []
+  for (const r of remotes) {
+    const ref = branchOk && SAFE_REMOTE.test(r.name) ? `refs/remotes/${r.name}/${branch}` : null
+    let hasRef = false
+    let unpushed: number | null = null
+    let behind: number | null = null
+    if (ref !== null) {
+      const verify = await run(['git', 'show-ref', '--verify', '--quiet', ref], { cwd })
+      hasRef = verify.code === 0
+      if (hasRef) {
+        const counts = await run(['git', 'rev-list', '--left-right', '--count', `${ref}...HEAD`], { cwd })
+        if (counts.code === 0) {
+          const [behindRaw = '0', aheadRaw = '0'] = counts.stdout.trim().split(/\s+/)
+          unpushed = Number(aheadRaw)
+          behind = Number(behindRaw)
+        }
+      }
+    }
+    out.push({ name: r.name, url: r.url, hasRef, unpushed, behind, upstream: upRemote !== null && upRemote === r.name })
+  }
+  return out
 }
 
 /**
  * Commits on HEAD not present on the remote-tracking branch (newest first,
- * capped at limit). Uses upstream when set, else origin/<branch> when that
- * remote ref exists, else all of HEAD (first push).
+ * capped at limit). With `remote`, uses `<remote>/<branch>` when that ref
+ * exists, else all of HEAD (first push to that remote). Without it, uses
+ * upstream when set, else `origin/<branch>` when that ref exists, else all
+ * of HEAD (first push).
  */
 export async function unpushedCommits(
   cwd: string,
   branch: string,
   limit: number,
+  remote?: string,
 ): Promise<UnpushedResult> {
   let ref: string | null = null
-  const up = await run(['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd })
-  if (up.code === 0 && up.stdout.trim() !== '') {
-    ref = up.stdout.trim()
-  } else if (SAFE_REV.test(branch)) {
-    const remoteRef = await run(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd })
-    if (remoteRef.code === 0) ref = `origin/${branch}`
+  if (remote !== undefined) {
+    if (SAFE_REMOTE.test(remote) && SAFE_REV.test(branch)) {
+      const remoteRef = await run(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`], { cwd })
+      if (remoteRef.code === 0) ref = `${remote}/${branch}`
+    }
+  } else {
+    const up = await run(['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd })
+    if (up.code === 0 && up.stdout.trim() !== '') {
+      ref = up.stdout.trim()
+    } else if (SAFE_REV.test(branch)) {
+      const remoteRef = await run(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`], { cwd })
+      if (remoteRef.code === 0) ref = `origin/${branch}`
+    }
   }
   const range = ref ? `${ref}..HEAD` : 'HEAD'
   const res = await run(
@@ -442,17 +515,23 @@ export async function unpushedCommits(
 }
 
 /**
- * Push current branch. First push (no upstream) runs `push -u origin
- * <branch>`; otherwise plain `git push`. NEVER any force variant — a
+ * Push `branch` to an explicit remote (never bare — kills push.default
+ * ambiguity). `-u` only when `setUpstream`. NEVER any force variant — a
  * non-fast-forward is rejected by the remote and surfaced as an error.
+ * The remote name must pass SAFE_REMOTE and still be configured here.
  */
-export async function push(
+export async function pushTo(
   cwd: string,
+  remote: string,
   branch: string,
   setUpstream: boolean,
   timeoutMs: number,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const argv = setUpstream ? ['git', 'push', '-u', 'origin', branch] : ['git', 'push']
+  if (!SAFE_REMOTE.test(remote)) throw new Error(`unsafe remote name: ${remote}`)
+  if (!SAFE_REV.test(branch)) throw new Error(`unsafe branch name: ${branch}`)
+  const configured = await run(['git', 'remote', 'get-url', remote], { cwd })
+  if (configured.code !== 0) throw new Error(`remote not configured: ${remote}`)
+  const argv = setUpstream ? ['git', 'push', '-u', remote, branch] : ['git', 'push', remote, branch]
   const res = await run(argv, { cwd, timeoutMs })
   return { code: res.code, stdout: res.stdout, stderr: res.stderr }
 }

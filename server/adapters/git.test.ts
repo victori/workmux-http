@@ -1,9 +1,9 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { addPaths, commitDiff, commitInfo, commitList, hasOrigin, push, repoStatus, resolveGithubRequest, runCommit, unstagePaths, unpushedCommits } from './git.js'
+import { addPaths, commitDiff, commitInfo, commitList, pushTo, remoteNames, remoteStatuses, repoStatus, resolveGithubRequest, runCommit, unstagePaths, unpushedCommits } from './git.js'
 
 /**
  * Real-git checks for status parsing, path staging, and the commit runner,
@@ -169,14 +169,14 @@ describe('push path (real git + local bare remote)', () => {
   test('should report no upstream before first push and detect origin', async () => {
     const s = await repoStatus(clone)
     expect(s.hasUpstream).toBe(false)
-    expect(await hasOrigin(clone)).toBe(true)
+    expect((await remoteNames(clone)).map((r) => r.name)).toEqual(['origin'])
     const u = await unpushedCommits(clone, 'main', 20)
     expect(u.ref).toBeNull()
     expect(u.commits.map((c) => c.subject)).toEqual(['feat: first'])
   })
 
   test('should first-push with -u, then report ahead/behind and range', async () => {
-    const p = await push(clone, 'main', true, 30_000)
+    const p = await pushTo(clone, 'origin', 'main', true, 30_000)
     expect(p.code).toBe(0)
     expect(rgit(['rev-parse', 'main']).trim()).toBe(cgit(['rev-parse', 'HEAD']).trim())
 
@@ -198,7 +198,7 @@ describe('push path (real git + local bare remote)', () => {
     expect(u.commits.every((c) => c.body === '')).toBe(true)
     expect(u.truncated).toBe(false)
 
-    const p2 = await push(clone, 'main', false, 30_000)
+    const p2 = await pushTo(clone, 'origin', 'main', false, 30_000)
     expect(p2.code).toBe(0)
     expect((await repoStatus(clone)).ahead).toBe(0)
   })
@@ -236,7 +236,7 @@ describe('push path (real git + local bare remote)', () => {
     expect(s.ahead).toBe(3) // cap, cap2, local divergent
     expect(s.behind).toBeGreaterThan(0)
 
-    const p = await push(clone, 'main', false, 30_000)
+    const p = await pushTo(clone, 'origin', 'main', false, 30_000)
     expect(p.code).not.toBe(0)
     expect(`${p.stdout}${p.stderr}`).toMatch(/non-fast-forward|fetch first|rejected/i)
     rmSync(other, { recursive: true, force: true })
@@ -249,6 +249,80 @@ describe('push path (real git + local bare remote)', () => {
     const u = await unpushedCommits(clone, 'main', 20)
     expect(u.commits[0]?.subject).toBe('feat: with body')
     expect(u.commits[0]?.body).toBe('line one\n\nline two')
+  })
+})
+
+describe('multi-remote status and explicit push', () => {
+  let remoteB: string
+  let clone: string
+
+  function cgit(args: string[]): void {
+    execFileSync('git', args, { cwd: clone })
+  }
+
+  beforeAll(() => {
+    const remoteA = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-rA-'))
+    remoteB = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-rB-'))
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remoteA])
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remoteB])
+    clone = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-clone2-'))
+    execFileSync('git', ['clone', '-q', remoteA, clone])
+    execFileSync('git', ['remote', 'add', 'github', remoteB], { cwd: clone })
+    execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: clone })
+    execFileSync('git', ['config', 'user.name', 'T'], { cwd: clone })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: clone })
+    writeFileSync(path.join(clone, 'f.txt'), '1\n')
+    cgit(['add', 'f.txt'])
+    cgit(['commit', '-qm', 'feat: first'])
+  })
+
+  afterAll(() => {
+    rmSync(remoteB, { recursive: true, force: true })
+    rmSync(clone, { recursive: true, force: true })
+  })
+
+  test('should list configured remotes origin-first with fetch urls', async () => {
+    const names = await remoteNames(clone)
+    expect(names.map((r) => r.name)).toEqual(['origin', 'github'])
+    expect(names[0]?.url).toContain('wmhttp-rA-')
+  })
+
+  test('should report never-pushed state for every remote before first push', async () => {
+    const st = await remoteStatuses(clone, 'main', 8)
+    expect(st.map((r) => [r.name, r.hasRef, r.unpushed, r.behind, r.upstream])).toEqual([
+      ['origin', false, null, null, false],
+      ['github', false, null, null, false],
+    ])
+  })
+
+  test('should track per-remote counts and upstream after -u push to secondary', async () => {
+    const p = await pushTo(clone, 'github', 'main', true, 30_000)
+    expect(p.code).toBe(0)
+    writeFileSync(path.join(clone, 'f.txt'), '1\n2\n')
+    cgit(['add', 'f.txt'])
+    cgit(['commit', '-qm', 'feat: second'])
+    const st = await remoteStatuses(clone, 'main', 8)
+    expect(st.map((r) => [r.name, r.hasRef, r.unpushed, r.behind, r.upstream])).toEqual([
+      ['origin', false, null, null, false],
+      ['github', true, 1, 0, true],
+    ])
+  })
+
+  test('should push to another remote without moving upstream', async () => {
+    const p = await pushTo(clone, 'origin', 'main', false, 30_000)
+    expect(p.code).toBe(0)
+    const st = await remoteStatuses(clone, 'main', 8)
+    expect(st.map((r) => [r.name, r.hasRef, r.unpushed, r.behind, r.upstream])).toEqual([
+      ['origin', true, 0, 0, false],
+      ['github', true, 1, 0, true],
+    ])
+  })
+
+  test('should refuse unsafe or unconfigured remote names', async () => {
+    await expect(pushTo(clone, 'ext::sh -c touch /tmp/wmhttp-pwned', 'main', false, 5_000)).rejects.toThrow(/unsafe remote/)
+    await expect(pushTo(clone, '--mirror', 'main', false, 5_000)).rejects.toThrow(/unsafe remote/)
+    await expect(pushTo(clone, 'nope', 'main', false, 5_000)).rejects.toThrow(/remote not configured/)
+    expect(existsSync('/tmp/wmhttp-pwned')).toBe(false)
   })
 })
 

@@ -62,6 +62,18 @@ function agent(overrides: Partial<AgentView> = {}): AgentView {
 
 const noop = () => undefined
 
+describe('AgentCard identity', () => {
+  it.each(['claude', 'codex', 'omp', 'custom-agent'])('labels the reported agent kind %s', (kind) => {
+    render(<AgentCard agent={agent({ agentKind: kind })} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.getByTitle(`Agent: ${kind}`)).toHaveTextContent(kind)
+  })
+
+  it('omits the agent label when the kind is missing', () => {
+    render(<AgentCard agent={agent({ agentKind: null })} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    expect(screen.queryByTitle(/^Agent:/)).not.toBeInTheDocument()
+  })
+})
+
 describe('AgentCard push', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -177,6 +189,93 @@ describe('AgentCard push', () => {
       ),
     )
     expect(await screen.findByText(/✓ pushed.*main -> origin\/main/, {}, { timeout: 3000 })).toBeInTheDocument()
+  })
+
+  it('renders the remote picker preselected and re-prepares when switching remotes', async () => {
+    const remotes = [
+      { name: 'origin', url: 'https://gitea.example.com/a/b.git', hasRef: true, unpushed: 2, behind: 0, upstream: true },
+      { name: 'github', url: 'https://github.com/a/b.git', hasRef: false, unpushed: null, behind: null, upstream: false },
+    ]
+    const base = {
+      action: 'push' as const,
+      targetId: 'wt_1',
+      targetLabel: 'dc/api [main]',
+      requiresConfirmation: true as const,
+      warnings: [],
+      commits: [{ sha: 'abc1234', subject: 'feat: x' }],
+      remotes,
+    }
+    mockApi.prepare
+      .mockResolvedValueOnce({ ...base, confirmToken: 'tok-a', remote: 'origin', setUpstream: false })
+      .mockResolvedValueOnce({ ...base, confirmToken: 'tok-b', remote: 'github', setUpstream: false, warnings: ['no github/main; this creates it'] })
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
+    const group = within(dialog).getByRole('radiogroup', { name: 'Push target remote' })
+    expect(within(group).getByRole('radio', { name: 'origin' })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: 'github' })).not.toBeChecked()
+    expect(within(group).getByText('new')).toBeInTheDocument()
+    fireEvent.click(within(group).getByRole('radio', { name: 'github' }))
+    await waitFor(() =>
+      expect(mockApi.prepare).toHaveBeenCalledWith({ action: 'push', targetId: 'wt_1', remote: 'github', setUpstream: false }),
+    )
+    expect(within(group).getByRole('radio', { name: 'github' })).toBeChecked()
+    // the new token from the re-prepare is the one executed
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /ready to push/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Push now' }))
+    await waitFor(() =>
+      expect(mockApi.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ confirmToken: 'tok-b', remote: 'github' }),
+      ),
+    )
+  })
+
+  it('shows the set-upstream checkbox and carries it into execute', async () => {
+    mockApi.prepare.mockResolvedValue({
+      action: 'push',
+      targetId: 'wt_1',
+      targetLabel: 'dc/api [main]',
+      requiresConfirmation: true,
+      confirmToken: 'tok-u',
+      warnings: ['no origin/main; this creates it and sets upstream'],
+      commits: [{ sha: 'abc1234', subject: 'feat: x' }],
+      remotes: [{ name: 'origin', url: 'u', hasRef: false, unpushed: null, behind: null, upstream: false }],
+      remote: 'origin',
+      setUpstream: true,
+    })
+    mockApi.execute.mockResolvedValue({ id: 'op-u', kind: 'push', target: 'api', state: 'running', output: null, error: null, startedAt: 1, endedAt: null })
+    mockApi.operation.mockResolvedValue({ id: 'op-u', kind: 'push', target: 'api', state: 'done', output: null, error: null, startedAt: 1, endedAt: 2 })
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
+    const up = within(dialog).getByRole('checkbox', { name: /Set origin as upstream/ })
+    expect(up).toBeChecked()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /ready to push/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Push now' }))
+    await waitFor(() =>
+      expect(mockApi.execute).toHaveBeenCalledWith(expect.objectContaining({ remote: 'origin', setUpstream: true })),
+    )
+  })
+
+  it('locks the picker when a configured push command owns the remote', async () => {
+    mockApi.prepare.mockResolvedValue({
+      action: 'push',
+      targetId: 'wt_1',
+      targetLabel: 'dc/api [main]',
+      requiresConfirmation: true,
+      confirmToken: 'tok-l',
+      warnings: ['no origin/main; the configured push command decides how the branch is published'],
+      commits: [{ sha: 'abc1234', subject: 'feat: x' }],
+      remotes: [{ name: 'origin', url: 'u', hasRef: false, unpushed: null, behind: null, upstream: false }],
+      remote: 'origin',
+      remoteLocked: true,
+    })
+    render(<AgentCard agent={agent()} selected={false} onOpen={noop} onOpenTerminal={noop} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Push dc-api' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Push commits' })
+    expect(within(dialog).queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('configured command decides')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: /as upstream/ })).not.toBeInTheDocument()
   })
 
   it('expands the full commit message on click and uses push-specific ack wording', async () => {

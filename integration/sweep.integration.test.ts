@@ -38,7 +38,7 @@ function view(overrides: Partial<WorktreeView> = {}): WorktreeView {
     projectPath: main,
     handle: 'wt-x',
     branch: 'feat/x',
-    path: path.join(main, '..', 'main__worktrees', 'wt-x'),
+    path: path.join(main, '.worktrees', 'wt-x'),
     isMain: false,
     mode: 'window',
     hasUncommittedChanges: false,
@@ -57,13 +57,23 @@ async function git(cwd: string, args: string[]): Promise<string> {
   return res.stdout.trim()
 }
 
+// workmux places worktrees under a layout that varies by version/config
+// (e.g. `<repo>/.worktrees/<name>` in 0.1.281). Capture the real path from
+// `workmux add` output instead of hardcoding the convention.
+const wtPaths = new Map<string, string>()
+
 async function addWorktree(name: string, branch: string): Promise<void> {
   const res = await wm.add({ cwd: main, branch, name })
   if (res.code !== 0) throw new Error(`workmux add failed: ${res.stderr.trim()}`)
+  const m = /^\s*Worktree:\s*(.+?)\s*$/m.exec(res.stdout)
+  const p = m?.[1]
+  if (p !== undefined) wtPaths.set(name, p)
 }
 
 function wtDir(name: string): string {
-  return path.join(path.dirname(main), 'main__worktrees', name)
+  const p = wtPaths.get(name)
+  if (!p) throw new Error(`worktree path unknown for ${name}; call addWorktree first`)
+  return p
 }
 
 beforeAll(async () => {

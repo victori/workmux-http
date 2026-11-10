@@ -8,7 +8,7 @@ import { loadConfig, BOUNDS, type AppConfig } from './config.js'
 import { checkRequest } from './security.js'
 import { Tmux } from './adapters/tmux.js'
 import { Workmux, DependencyError } from './adapters/workmux.js'
-import { SAFE_REV } from './adapters/git.js'
+import { SAFE_REMOTE, SAFE_REV } from './adapters/git.js'
 import { GithubProvider } from './adapters/github.js'
 import { SweepGit } from './adapters/sweep-git.js'
 import { Discovery } from './services/discovery.js'
@@ -86,6 +86,8 @@ const PrepareBody = z.object({
   action: z.enum(['merge', 'remove', 'stop', 'close', 'open', 'push']),
   targetId: z.string().min(1).max(64),
   acceptWarnings: z.boolean().optional(),
+  remote: z.string().min(1).max(64).regex(SAFE_REMOTE).optional(),
+  setUpstream: z.boolean().optional(),
 })
 
 const ExecuteBody = PrepareBody.extend({

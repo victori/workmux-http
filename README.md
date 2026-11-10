@@ -152,7 +152,7 @@ must be authenticated — `gh auth login`), `git`.
 | `WORKMUX_HTTP_MAX_OWNED_TERMINALS` | `4` | Concurrent advanced-terminal (`wmhttp-adv-*` owned) sessions allowed; further attaches are refused with the limit in the error. |
 | `WORKMUX_<KIND>_COMMIT_CMD` | **unset = off** | **Default off:** with none set, every worktree keeps the existing agent-commit path (send `commit` to the agent). Direct-commit command for agent kind `<KIND>`: `WORKMUX_OMP_COMMIT_CMD` / `WORKMUX_OPENCODE_COMMIT_CMD` (interchangeable — workmux reports opencode as `omp`), `WORKMUX_CLAUDE_COMMIT_CMD`, `WORKMUX_CODEX_COMMIT_CMD`, or any other kind uppercased with non-alphanumerics → `_`. When set for a worktree's agent kind, the diff view's Commit becomes a message box running this command in the worktree (the commit message replaces the `{{COMMIT_MSG}}` token where present, appended otherwise; whole-token is safest, substring works inside shell wrappers with context escaping). The command must be an executable on the server's PATH — spawned with **no shell**, so shell functions/aliases (`.zshrc`) never resolve; env vars the command needs must be exported to the server process. To reference a zsh function anyway: `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"` (interactive zsh loads `~/.zshrc`; the placeholder is substituted inside the `-c` string, shell-escaped per quoting context). |
 | `WORKMUX_COMMIT_TIMEOUT_MS` | `300000` | Timeout for the direct-commit command (AI commit tools can run minutes). |
-| `WORKMUX_<KIND>_PUSH_CMD` | **unset = plain `git push`** | Per-kind push command (same kind resolution + `OMP`↔`OPENCODE` aliasing as the commit vars). Tokens: `{{BRANCH}}` and `{{REMOTE}}` (origin) — whole-token = one argv element, substring = context-escaped inside shell wrappers; no `{{BRANCH}}` token → branch appended last. The wrapper owns flags (`-u` etc). To inherit your zsh like the commit path: `WORKMUX_OMP_PUSH_CMD="zsh -ic 'git push -u {{REMOTE}} {{BRANCH}}'"`. |
+| `WORKMUX_<KIND>_PUSH_CMD` | **unset = plain `git push`** | Per-kind push command (same kind resolution + `OMP`↔`OPENCODE` aliasing as the commit vars). Tokens: `{{BRANCH}}` and `{{REMOTE}}` (the remote picked in the push dialog; defaults to upstream→origin→sole) — whole-token = one argv element, substring = context-escaped inside shell wrappers; no `{{BRANCH}}` token → branch appended last; no `{{REMOTE}}` token → the command owns the remote and the picker locks. The wrapper owns flags (`-u` etc). To inherit your zsh like the commit path: `WORKMUX_OMP_PUSH_CMD="zsh -ic 'git push -u {{REMOTE}} {{BRANCH}}'"`. |
 | `WORKMUX_PUSH_TIMEOUT_MS` | `120000` | Timeout for `git push` (network-bound). |
 
 ### VPN access model
@@ -178,8 +178,8 @@ protection).
 
 ## What it shows / does
 
-- **Dashboard** — every managed agent (status, elapsed, branch, dirty state) and
-  every worktree (branch, uncommitted, PR/CI status), searchable, filterable,
+- **Dashboard** — every managed agent (agent kind badge, status, elapsed, branch,
+  dirty state) and every worktree (branch, uncommitted, PR/CI status), searchable, filterable,
   sortable; preferences persist per tab. Only panes workmux recognizes as
   agents (with an `agent_kind`) are listed — kind-less records such as a
   plain zsh pane running your dev server are filtered out (they aren't
@@ -256,23 +256,34 @@ protection).
     `WORKMUX_OMP_COMMIT_CMD="zsh -ic 'opencode-commit -a \"{{COMMIT_MSG}}\"'"`
   - or generate a standalone script from the function once:
     `{ echo '#!/bin/zsh'; functions opencode-commit; echo 'opencode-commit "$@"'; } > ~/.local/bin/opencode-commit && chmod +x ~/.local/bin/opencode-commit`
-- **Push** — agent cards show an `↑N` badge when the worktree has N unpushed
-  commits (ahead of upstream; hidden when nothing pending or git is
-  unavailable), and a `●N` badge when N files have changes to be committed
-  (untracked + staged + unstaged + conflicts, each path counted once). The card's Push button opens a confirm dialog listing the
+- **Push** — agent cards show per-remote unpushed badges (`origin ↑2`, muted
+  `github new` for a remote the branch was never pushed to; each remote with
+  0 to publish is hidden), falling back to a single aggregate `↑N` badge when
+  per-remote state is unavailable, and a `●N` badge when N files have changes
+  to be committed (untracked + staged + unstaged + conflicts, each path
+  counted once). The card's Push button opens a confirm dialog listing the
   exact commits that would be published (sha + subject, capped at 20; tap a
-  commit with a body to expand the full message) plus warnings — first push
-  (`creates origin/<branch> + sets upstream`) and divergence (`remote has N
-  newer commits`). Push always requires ticking "I confirm these commits are
+  commit with a body to expand the full message), a **remote picker**
+  (radiogroup of configured remotes with per-remote counts / `new` /
+  `upstream` tags, defaulting to upstream → `origin` → sole remote; an
+  opt-in "set `<remote>` as upstream" checkbox governs `-u`), plus warnings —
+  first push to the selected remote (`creates <remote>/<branch>`) and
+  divergence (`<remote> has N newer commits`). Switching the remote
+  re-prepares for a fresh token; when a per-kind push command owns the
+  remote (no `{{REMOTE}}` token) the picker locks to a read-only target.
+  Push always requires ticking "I confirm these commits are
   ready to push" — even with zero warnings. On confirm the dialog closes
   immediately and the card shows a pulsing `pushing…` indicator while the
   push runs async via the operations registry, ending in an inline ✓/error
-  note. The confirmation token binds HEAD sha + commit list, so commits
-  added after you open the dialog force re-review. **No force-push code path
+  note. The confirmation token binds HEAD sha + commit list + selected remote
+  + `-u` decision, so commits added — or the remote switched — after you open
+  the dialog force re-review. Push always names the remote explicitly
+  (`git push [-u] <remote> <branch>`), never bare. **No force-push code path
   exists**; a non-fast-forward is rejected by the remote and surfaced.
   A per-kind `WORKMUX_<KIND>_PUSH_CMD` replaces the built-in `git push`
   (e.g. an interactive-zsh wrapper, same pattern as the commit commands —
-  see the env table). `ahead` reflects the last local `git status` (remote
+  see the env table); `{{REMOTE}}` receives the picked remote. `ahead`
+  reflects the last local `git status` (remote
   refs move when something fetches).
 - **Destructive actions** (merge, remove worktree, stop agent) always
   prepare → show exact target + warnings → confirm token → execute with
@@ -335,7 +346,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 477 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 501 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,

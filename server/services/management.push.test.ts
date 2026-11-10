@@ -17,6 +17,7 @@ import { worktreeId } from '../targets.js'
  */
 
 let remote: string
+let remote2: string
 let repo: string
 let fixtureDir: string
 let management: Management
@@ -59,6 +60,9 @@ function git(args: string[]): string {
 function rgit(args: string[]): string {
   return execFileSync('git', args, { cwd: remote, encoding: 'utf8' })
 }
+function rgit2(args: string[]): string {
+  return execFileSync('git', args, { cwd: remote2, encoding: 'utf8' })
+}
 
 function commit(file: string, message: string): void {
   writeFileSync(path.join(repo, file), `${message}\n`)
@@ -84,6 +88,9 @@ beforeAll(() => {
   execFileSync('git', ['config', 'user.name', 'T'], { cwd: repo })
   execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repo })
   git(['remote', 'add', 'origin', remote])
+  remote2 = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-remote2-'))
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote2])
+  git(['remote', 'add', 'github', remote2])
   commit('a.txt', 'feat: one')
   commit('b.txt', 'fix: two')
 
@@ -116,6 +123,7 @@ beforeAll(() => {
 
 afterAll(() => {
   rmSync(remote, { recursive: true, force: true })
+  rmSync(remote2, { recursive: true, force: true })
   rmSync(repo, { recursive: true, force: true })
   rmSync(fixtureDir, { recursive: true, force: true })
 })
@@ -126,7 +134,7 @@ describe('push action (real git + bare remote)', () => {
   test('should list unpushed commits and warn about first push', async () => {
     const p = await management.prepare({ action: 'push', targetId: wtId() })
     expect(p.commits?.map((c) => c.subject)).toEqual(['fix: two', 'feat: one'])
-    expect(p.warnings.join(' ')).toMatch(/creates origin\/main/)
+    expect(p.warnings.join(' ')).toMatch(/no origin\/main; this creates it and sets upstream/)
     expect(p.blocked).toBeUndefined()
     expect(p.confirmToken).toBeTruthy()
   })
@@ -204,7 +212,7 @@ describe('push action (real git + bare remote)', () => {
     rmSync(other, { recursive: true, force: true })
   })
 
-  test('should block when no origin remote exists', async () => {
+  test('should block when no remote exists', async () => {
     const orphan = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-orphan-'))
     execFileSync('git', ['init', '-q', '-b', 'main', orphan])
     execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: orphan })
@@ -239,7 +247,7 @@ describe('push action (real git + bare remote)', () => {
     const mgmt2 = new Management(cfg2, idleTmux, new Workmux(), disc2, new Operations())
 
     const p = await mgmt2.prepare({ action: 'push', targetId: worktreeId('orphan', orphan) })
-    expect(p.blocked).toMatch(/no origin remote/)
+    expect(p.blocked).toMatch(/no remote configured/)
     rmSync(orphan, { recursive: true, force: true })
     rmSync(fx2, { recursive: true, force: true })
   })
@@ -322,5 +330,129 @@ describe('push action (real git + bare remote)', () => {
     expect(rgit(['rev-parse', '--short', 'feature-x']).trim()).toBe(git(['rev-parse', '--short', 'HEAD']).trim())
     git(['checkout', '-q', 'main'])
     rmSync(fx3, { recursive: true, force: true })
+  })
+
+  test('should expose picker state and resolve the default to the upstream remote', async () => {
+    commit('pick.txt', 'feat: picker')
+    const p = await management.prepare({ action: 'push', targetId: wtId() })
+    expect(p.remote).toBe('origin')
+    expect(p.remotes?.map((r) => r.name)).toEqual(['origin', 'github'])
+    expect(p.setUpstream).toBe(false)
+    expect(p.remoteLocked).toBe(false)
+  })
+
+  test('should push a secondary remote without touching upstream by default', async () => {
+    const p = await management.prepare({ action: 'push', targetId: wtId(), remote: 'github' })
+    expect(p.remote).toBe('github')
+    expect(p.setUpstream).toBe(false)
+    expect(p.warnings.join(' ')).toMatch(/no github\/main; this creates it$/)
+    const op = await management.execute({
+      action: 'push',
+      targetId: wtId(),
+      remote: 'github',
+      confirmToken: p.confirmToken!,
+      requestId: 'm1',
+      acceptWarnings: true,
+    })
+    expect((await settle(op.id))?.state).toBe('done')
+    expect(rgit2(['rev-parse', 'main']).trim()).toBe(git(['rev-parse', 'HEAD']).trim())
+    expect(git(['rev-parse', '--abbrev-ref', '@{u}']).trim()).toBe('origin/main')
+  })
+
+  test('should set upstream on the secondary remote when asked', async () => {
+    commit('sec2.txt', 'feat: sec2')
+    const p = await management.prepare({ action: 'push', targetId: wtId(), remote: 'github', setUpstream: true })
+    expect(p.setUpstream).toBe(true)
+    const op = await management.execute({
+      action: 'push',
+      targetId: wtId(),
+      remote: 'github',
+      setUpstream: true,
+      confirmToken: p.confirmToken!,
+      requestId: 'm2',
+      acceptWarnings: p.warnings.length > 0,
+    })
+    expect((await settle(op.id))?.state).toBe('done')
+    expect(git(['rev-parse', '--abbrev-ref', '@{u}']).trim()).toBe('github/main')
+    const after = await management.prepare({ action: 'push', targetId: wtId() })
+    expect(after.remote).toBe('github')
+  })
+
+  test('should bind the selected remote into the confirm token', async () => {
+    commit('tok.txt', 'feat: tok')
+    const p = await management.prepare({ action: 'push', targetId: wtId(), remote: 'origin' })
+    await expect(
+      management.execute({
+        action: 'push',
+        targetId: wtId(),
+        remote: 'github',
+        confirmToken: p.confirmToken!,
+        requestId: 'm3',
+        acceptWarnings: true,
+      }),
+    ).rejects.toThrow(ConfirmationError)
+  })
+
+  test('should reject an unconfigured remote at prepare', async () => {
+    await expect(management.prepare({ action: 'push', targetId: wtId(), remote: 'nope' })).rejects.toThrow(BadRequestError)
+  })
+
+  test('should require an explicit choice when no default remote exists', async () => {
+    const twin = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-twin-'))
+    const rA = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-twinA-'))
+    const rB = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-twinB-'))
+    const fx4 = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-push-fx4-'))
+    try {
+      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', rA])
+      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', rB])
+      execFileSync('git', ['init', '-q', '-b', 'main', twin])
+      execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: twin })
+      execFileSync('git', ['config', 'user.name', 'T'], { cwd: twin })
+      execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: twin })
+      execFileSync('git', ['remote', 'add', 'alpha', rA], { cwd: twin })
+      execFileSync('git', ['remote', 'add', 'beta', rB], { cwd: twin })
+      writeFileSync(path.join(twin, 'x.txt'), 'x\n')
+      execFileSync('git', ['add', 'x.txt'], { cwd: twin })
+      execFileSync('git', ['commit', '-qm', 'only local'], { cwd: twin })
+
+      writeFileSync(
+        path.join(fx4, 'list-all.json'),
+        JSON.stringify([
+          {
+            project: 'twin',
+            project_path: twin,
+            handle: 'twin',
+            branch: 'main',
+            path: twin,
+            is_main: true,
+            mode: 'window',
+            has_uncommitted_changes: false,
+            is_open: true,
+            agent_statuses: [],
+            created_at: 1700000000,
+          },
+        ]),
+      )
+      writeFileSync(path.join(fx4, 'status-all.json'), JSON.stringify({ agents: [], target_errors: [] }))
+      const cfg4 = { ...loadConfig({}), fixtureDir: fx4 }
+      const disc4 = new Discovery(cfg4, idleTmux, new Workmux())
+      const mgmt4 = new Management(cfg4, idleTmux, new Workmux(), disc4, new Operations())
+      const twinId = worktreeId('twin', twin)
+
+      const ambiguous = await mgmt4.prepare({ action: 'push', targetId: twinId })
+      expect(ambiguous.blocked).toMatch(/multiple remotes configured/)
+      expect(ambiguous.remote).toBeUndefined()
+      expect(ambiguous.remotes?.map((r) => r.name)).toEqual(['alpha', 'beta'])
+
+      const picked = await mgmt4.prepare({ action: 'push', targetId: twinId, remote: 'beta' })
+      expect(picked.blocked).toBeUndefined()
+      expect(picked.remote).toBe('beta')
+      expect(picked.setUpstream).toBe(true)
+    } finally {
+      rmSync(twin, { recursive: true, force: true })
+      rmSync(rA, { recursive: true, force: true })
+      rmSync(rB, { recursive: true, force: true })
+      rmSync(fx4, { recursive: true, force: true })
+    }
   })
 })
