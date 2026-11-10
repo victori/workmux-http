@@ -743,3 +743,27 @@ original requirements above remain in force unless noted.
 - Verification: e2e cycle test re-anchored on the wrap default (wrap→fit→
   scroll→wrap, no page overflow); text-size persistence test no longer needs
   a scroll pin; full gate green (typecheck, 332 vitest, build, 28 e2e).
+
+### Specification-delta instruction (2026-11-09, development workflow)
+
+- AGENTS.md now requires a before/after delta, rationale, preserved
+  invariants, and observable verification before behavior changes; the
+  final review compares implementation with that delta. Work within the
+  user's requested scope proceeds without additional approval.
+- Supersedes the code + green tests precedence rule: code and tests
+  establish observed behavior; user-approved requirements establish
+  intended behavior. Passing verification does not authorize weakening a
+  requirement or test. SPEC.md and AGENTS.md carry the same distinction.
+- Important bug fixes require a failing-before/passing-after regression
+  demonstration, with verification limitations reported. Documentation
+  ownership remains explicit; backup requirements depend on actual version
+  control tracking rather than the obsolete assumption that plans are
+  untracked.
+- Verification delta: documentation-only change; targeted SPEC.md drift
+  checks passed (11), typecheck/build passed, full Vitest rerun passed (332),
+  and fixture e2e passed (28) with a fresh server. Manual second-pass diff
+  review completed; no new tests or runtime behavior changes.
+- Verification limitation: the first full Vitest run failed the existing
+  commit-history ordering assertion in server/adapters/git.test.ts; the
+  focused adapter rerun (27) and full rerun passed without code changes.
+  That intermittent failure remains outside this documentation change.

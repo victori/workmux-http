@@ -156,6 +156,36 @@ it the default in code or docs.
 - `docs/superpowers/plans/2026-11-07-workmux-http-dashboard.md` —
   canonical initial spec + `## Amendments` trail
 
+## Specification deltas
+
+Before implementing a behavior change, state a concise delta:
+
+- Before: the existing behavior or requirement.
+- After: the intended behavior, including relevant failure cases.
+- Reason: why this change is needed.
+- Invariants: which safety guarantees must remain true.
+- Verification: the observable evidence that will establish the change.
+
+Proceed when the delta is within the user's requested scope. Ask for
+clarification only when it contradicts an explicit requirement or requires
+a material decision outside that scope.
+
+Update documentation in the same change:
+
+- `docs/SPEC.md` for current behavior, contracts, and state machines.
+- The canonical plan's Amendments section for the decision and rationale.
+- `README.md` when setup or user-visible behavior changes.
+- `AGENTS.md` only when development conventions change.
+
+For bug fixes, preserve the intended requirement and correct the code.
+Never weaken a requirement or test merely to make verification pass.
+
+For important bug fixes, demonstrate that the regression test fails before
+the fix and passes afterward. Report any verification limitations.
+
+Before finishing, compare the final implementation with the stated delta
+and review the diff for undocumented behavior changes.
+
 ## Spec Maintenance (post-plan changes)
 
 - `docs/SPEC.md` is the **current-state specification** (what the system
@@ -163,9 +193,12 @@ it the default in code or docs.
   WS protocol, or state machines MUST update it in the same commit.
   `server/docs.spec.test.ts` machine-checks the route/env/error tables —
   drift fails `npm test`.
-- Precedence on conflict: code + green tests > SPEC.md > latest canonical
-  amendment > AGENTS.md conventions > README.md > dated feature plans.
-  Discovering a conflict is a finding: fix the weaker doc in the same change.
+- Precedence on conflict: code and tests establish observed behavior.
+  User-approved requirements establish intended behavior. A conflict is a
+  finding to resolve, not permission to rewrite the requirement.
+  For conflicting documents: SPEC.md > latest canonical amendment >
+  AGENTS.md conventions > README.md > dated feature plans. This hierarchy
+  does not override explicit user requirements.
 - The plan in `docs/superpowers/plans/` is the canonical decision trail.
   Any feature added or behavior changed after the plan MUST update that
   document in the same change — do not leave the spec stale.
@@ -177,8 +210,9 @@ it the default in code or docs.
   criterion, say so explicitly in the entry.
 - Amendments that change user-visible behavior or env vars also update
   `README.md`; convention-level facts update this file.
-- Backup rule applies: plan docs are untracked (repo has no git) — take a
-  timestamped `.bak` before editing.
+- Backup rule applies to any file not tracked by version control: create a
+  timestamped `.bak` of the original before editing. Check tracking status
+  rather than assuming plan docs are untracked.
 
 ## Runtime/Tooling Preferences
 

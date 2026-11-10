@@ -3,12 +3,14 @@
 Status: living document. This file describes **what the system does today**.
 The chronological decision trail lives in `docs/superpowers/plans/`
 (amendments) and per-feature plans — those explain *why*; this explains
-*what is*. When they disagree, this file wins (except per precedence below).
+*what is*. Resolve conflicts using the distinction and precedence below.
 
-**Precedence on conflict:** code + green tests > SPEC.md > latest canonical
-amendment > AGENTS.md conventions > README.md > dated feature plans. A
-discovery of conflict is itself a finding: fix the weaker document in the
-same change.
+**Precedence on conflict:** code and tests establish observed behavior.
+User-approved requirements establish intended behavior. A conflict is a
+finding to resolve, not permission to rewrite the requirement.
+For conflicting documents: SPEC.md > latest canonical amendment > AGENTS.md
+conventions > README.md > dated feature plans. This hierarchy does not
+override explicit user requirements.
 
 **Drift harness:** `server/docs.spec.test.ts` machine-checks the tables
 below against `server/index.ts`, `server/config.ts`, and `server/security.ts`
