@@ -330,7 +330,7 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
 
 export type GithubResolveResult =
   | { ok: true; request: GithubRequest }
-  | { ok: false; reason: 'unsupported' | 'ambiguous'; detail: string }
+  | { ok: false; reason: 'unsupported' | 'ambiguous' | 'unavailable'; detail: string }
 
 /**
  * Resolve this checkout's GitHub identity from local config only (no network):
@@ -352,13 +352,14 @@ export async function resolveGithubRequest(
   }
   const namesRes = await run(['git', 'remote'], { cwd }).catch(() => null)
   if (!namesRes || namesRes.code !== 0) {
-    return { ok: false, reason: 'unsupported', detail: 'cannot list remotes' }
+    return { ok: false, reason: 'unavailable', detail: 'cannot list remotes' }
   }
   const names = namesRes.stdout.split('\n').map((s) => s.trim()).filter((n) => n && !n.startsWith('-'))
   const urls = new Map<string, string>()
   for (const name of names) {
     const res = await run(['git', 'remote', 'get-url', name], { cwd }).catch(() => null)
-    if (res && res.code === 0) urls.set(name, res.stdout.trim())
+    if (!res || res.code !== 0) return { ok: false, reason: 'unavailable', detail: 'cannot read remote URL' }
+    urls.set(name, res.stdout.trim())
   }
   const githubRemotes = new Map<string, { owner: string; repo: string }>()
   for (const [name, url] of urls) {

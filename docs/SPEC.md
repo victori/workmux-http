@@ -155,8 +155,13 @@ stale is not an HTTP error.
     lastOkAt)` (source health + polling), **never** `snapshot.stale` alone
     (idle agents are per-agent badges, not a connection problem). GitHub
     status carries its own per-key freshness: successes serve 60 s then
-    render `stale` while refreshing; failures retry after 15 s; cache keys
-    include the exact HEAD oid so a prior commit's CI never labels a new one.
+    render `stale` while refreshing; conclusive negatives (query succeeded,
+    no PR, CI not pending — unpublished commit, no CI, or complete checks
+    with no PR) start at 5 min and double to a 30 min cap. Failure
+    backoff starts at 15 s and doubles to a 5 min cap while retaining
+    last-good data as stale;
+    cache keys include the exact HEAD oid so a prior commit's CI never labels
+    a new one.
 11. **INV-11 — Terminal is session-wide and honestly disclosed**: attach validates
     the requested pane but tmux focus is per-window; `attached.activePaneId` +
     2 s watchdog emit `pane-changed` and the UI names the keystroke target.
@@ -194,7 +199,7 @@ and any applicable gap below when reporting verification.
 | `INV-07` | `server/adapters/git.test.ts::should list unmerged paths as conflicts` | Partial: conflict listing is covered; no dedicated service regression for conflict exclusion from bulk add and unstage. |
 | `INV-08` | `server/adapters/git.test.ts::should reject unsafe revisions`<br>`server/security.routes.test.ts::rejects range syntax in the sha parameter`<br>`server/adapters/sweep-git.test.ts::should flag refs that fail SAFE_REV`<br>`server/adapters/sweep-git.test.ts::should never execute hostile remote helper urls`<br>`server/adapters/git.test.ts::should refuse unsafe or unconfigured remote names` | Commit-diff rejection is covered; no dedicated hostile .workmux.yaml base or merge-ref regression. Sweep base resolution and remote queries refuse unsafe refs and `ext::`-style remotes. |
 | `INV-09` | `server/services/management.hunks.test.ts::should reject stale snapshots without touching the index`<br>`server/services/management.hunks.test.ts::should reject foreign patch text as piece` | Real temporary git index checks; no dedicated HTTP snapshot_stale status regression. |
-| `INV-10` | `src/hooks/useDashboard.test.ts::is online when all sources are healthy even if agents are idle-stale`<br>`src/hooks/useDashboard.test.ts::is stale when some sources failed`<br>`src/hooks/useDashboard.test.ts::is stale when polling stalled past the timeout`<br>`src/hooks/useDashboard.poll.test.ts::reports online immediately after resume (no stale flash)`<br>`server/services/github-status.test.ts::should preserve last good PR data with a stale marker`<br>`server/services/github-status.test.ts::should discard late completions for departed keys` | Derived-state and mocked polling checks; no real VPN outage or physical Safari background/resume proof. GitHub TTL/backoff verified with fake timers only. |
+| `INV-10` | `src/hooks/useDashboard.test.ts::is online when all sources are healthy even if agents are idle-stale`<br>`src/hooks/useDashboard.test.ts::is stale when some sources failed`<br>`src/hooks/useDashboard.test.ts::is stale when polling stalled past the timeout`<br>`src/hooks/useDashboard.poll.test.ts::reports online immediately after resume (no stale flash)`<br>`server/services/github-status.test.ts::should preserve last good PR data with a stale marker`<br>`server/services/github-status.test.ts::should discard late completions for departed keys`<br>`server/services/github-status.test.ts::should hold a conclusive negative for the extended window without refetching`<br>`server/services/github-status.test.ts::should progressively back off repeated no-PR results and reset when a PR appears`<br>`server/services/github-status.test.ts::should progressively back off failures up to the cap and reset after recovery`<br>`server/services/discovery.test.ts::should join service status without blocking the snapshot build` | Derived-state and mocked polling checks; no real VPN outage or physical Safari background/resume proof. GitHub intervals use fake timers and a fake provider. Discovery revalidation uses local Git and a fake provider. |
 | `INV-11` | `server/services/terminal.hub.test.ts::reports the window active pane on attach even when it differs from the agent`<br>`server/services/terminal.hub.test.ts::emits pane-changed when the window active pane moves while attached`<br>`src/features/terminal/TerminalView.test.tsx::discloses when the window active pane differs from the agent (F05)` | Hub and UI use mocks; no split-pane live integration check of disclosure updates. |
 | `INV-12` | `server/services/management.push.test.ts::should push a secondary remote without touching upstream by default`<br>`server/services/management.push.test.ts::should set upstream on the secondary remote when asked`<br>`server/services/management.push.test.ts::should bind the selected remote into the confirm token`<br>`server/services/management.push.test.ts::should require an explicit choice when no default remote exists`<br>`server/adapters/git.test.ts::should refuse unsafe or unconfigured remote names`<br>`server/adapters/git.test.ts::should push to another remote without moving upstream` | Remote deletion between prepare and execute changes the state key (covered by the binding test's sibling drift assertions); per-remote behind-counts proven against local refs only — remote-side races remain bounded by git's non-fast-forward rejection. |
 
@@ -220,12 +225,25 @@ as passing; null rollup, per-field GraphQL errors, and unpublished commits
 are `unknown`; a successful empty set is `none`; neutral/skipped are counted
 separately and cannot turn a badge green; all-green does not mean mergeable.
 
-Refresh: shared service (60 s success TTL, 15 s failure backoff, 4
-concurrent scheduled refreshes, queue 100, cache 1000, in-flight dedup),
-keys = repos + branch + HEAD oid; departed keys pruned and late results
-dropped. Sweep's synchronous `fresh` reads bypass the scheduled cap (one
-at a time, serial per sweep) so confirmation evidence never queues
-behind background polls.
+Refresh: active results use a 60 s TTL. Consecutive no-PR results with no
+pending CI use 5, 10, 20, then 30 min. Consecutive failures use 15, 30,
+60, 120, 240, then 300 s, including failures after a successful result.
+Transient CI lookup failures use failure backoff. The latest PR and
+last-good CI are shown as stale until CI recovers. An unpublished
+commit remains eligible for no-PR backoff. Results limited by the CI
+pagination cap and results with pending checks keep the active interval.
+An active result or failure ends the no-PR streak, and a successful
+result resets failure backoff. The shared service deduplicates in-flight
+reads and caps scheduled concurrency at 4, the queue at 100, and the
+cache at 1000. Keys are repos + branch + HEAD oid. Departed keys are
+pruned and late results dropped. Local remote identity is revalidated
+every 60 s. Same-branch revalidation preserves existing keys and waits
+for confirmation before scheduling another provider read. A failed local
+lookup keeps the existing status stale and suspends GitHub reads until
+local revalidation succeeds. Unsupported identities make no provider
+requests. Sweep's synchronous `fresh` reads bypass backoff and the
+scheduled cap (one at a time, serial per sweep). Queued reads respect
+the deadline set by a completed sweep read.
 Discovery schedules reads and never awaits the network; GitHub failure
 never affects `sources` or `deriveConnection` (INV-06/INV-10 extension).
 Requires the `gh` CLI; fixture mode serves `fixtures/github-status.json`
@@ -332,7 +350,11 @@ the visible viewport, never the expanded grid.
   connection banner, PR/CI status
   badges (PR number/state/review link + CI rollup badge with counts, check
   list, stale age, honest unknown/unavailable/unsupported disclosure;
-  rendered outside card navigation buttons).
+  rendered outside card navigation buttons). Agent cards reserve a
+  single 44px PR/CI row even when status is absent. The row accommodates
+  the Checks button and scrolls horizontally for long content across
+  loading, ready, stale, unavailable, and unsupported states. Opening
+  the check list expands the card.
   Only workmux records with a recognized `agent_kind` are listed; kind-less
   panes (plain shells, dev servers) are filtered out of both the agent
   list and message targets.

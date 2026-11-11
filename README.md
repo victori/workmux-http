@@ -193,7 +193,17 @@ protection).
   non-GitHub remotes are disclosed as unsupported. GitHub being unreachable
   never affects the core tmux/workmux connection indicator. Only
   `github.com` is supported in this release; only the worktree's own
-  remotes are ever queried.
+  remotes are ever queried. Agent cards reserve a single PR/CI row even
+  when status is absent. The row stays the same height during refreshes
+  and scrolls horizontally for long content. Opening the per-check list
+  expands the card. Refresh cadence is
+  load-aware: active results
+  (a PR exists or CI is pending) re-check every 60 s; a **conclusive
+  negative** (no PR and no pending CI) waits 5, 10, 20, then 30 minutes
+  between repeated results. Repeated failures start at 15 seconds and
+  double up to 5 minutes, even when the last good result is still shown.
+  A new commit gets a fresh check. Unsupported remotes make zero GitHub
+  requests and recheck local remote configuration once a minute.
 - **Clean sweep** — the Worktrees tab's *Clean sweep* button scans the
   currently displayed worktrees for provably clean removal targets: merged or
   closed PR (exact HEAD), vanished upstream branch, or local merge into the
@@ -346,7 +356,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 501 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 507 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,

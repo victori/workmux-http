@@ -994,3 +994,57 @@ original requirements above remain in force unless noted.
   places worktrees at `<repo>/.worktrees/<name>`. Harness now captures the
   real path from `workmux add` output (version-tolerant). Production was
   unaffected (discovery reads paths from `workmux list`).
+
+### 2026-11-10: conclusive-negative GitHub polling backoff
+
+- Changed: the PR/CI service cached every `ready` result as a success and
+  re-polled it every 60 s forever — so a branch with no PR whose commit isn't
+  even on GitHub (cards showing `No PR` + `commit not found on GitHub`)
+  burned ~3 `gh` subprocesses/minute indefinitely. Now a **conclusive
+  negative** — query succeeded, `pr === null`, and CI is not `pending`
+  (unpublished commit, no CI configured, or complete checks with no PR) —
+  serves fresh for `githubConclusiveTtlMs` (5 min) before re-checking.
+  Active results (PR present or CI pending) keep the 60 s TTL; failures keep
+  15 s backoff; a new HEAD changes the cache key and polls immediately;
+  sweep's `fresh` bypasses the cache entirely.
+- Why: stable-state polling is pure API load; the state can only change on a
+  push (new oid → instant) or a PR opened against the current head (≤5 min
+  detection latency — accepted tradeoff, manual refresh is instant).
+- Scope: `isConclusiveNegative` helper + `conclusive` flag on the ok cache
+  entry + TTL branch in `view`; `BOUNDS.githubConclusiveTtlMs`. INV-10
+  extended (SPEC + README cadence note). +3 vitest (504 total): extended
+  window holds without refetch, PR-present and CI-pending keep the short TTL.
+
+### 2026-11-10: fixed-height PR/CI slot (no card futz)
+
+- Changed: `PrCiStatus` renders a reserved two-row slot (`min-h-[48px]`)
+  for every state — loading, unsupported, unavailable, ready/stale.
+  Row 1: PR chip (truncates) + CI badge (fixed); row 2: meta (incomplete,
+  age/outdated, error, inline check-list summary). Previously loading was
+  one short line (~16 px) while resolved badges wrapped to 3 rows (~74 px
+  at 390 px), so cards jumped ~46 px as GitHub data resolved and rows of
+  cards resized together. The check-list `<details>` expansion still grows
+  the card (user-initiated).
+- Why: dashboard rows resized on every PR/CI resolution — visible layout
+  churn while polling (user-reported "cards futz the UI").
+- Proof: Playwright measures the first agent card's `boundingBox().height`
+  identical with github forced to `loading` vs resolved (iPhone viewport,
+  fixture injection via worktree join). +2 vitest (506 total), +1 e2e
+  (46 total). SPEC §8 + README updated.
+
+### 2026-11-10 (later same day): single-row PR/CI strip — supersedes the two-row slot above
+
+- Changed: the reserved two-row slot above bloated every card ~24 px — on
+  the live dashboard 7/9 cards are one-line `GitHub unsupported` and 2 are
+  loading, so the 48 px reserve was dead space (cards 170→197 px, user:
+  "even worse now"). Replaced with a single-row strip (`min-h-[24px]`,
+  `overflow-x-auto`, hidden scrollbar): badges + error + age + checks
+  summary inline, no wrapping, horizontal scroll when wide. The checks
+  `<details>` became a controlled toggle rendering its list below the strip
+  (expansion still grows the card).
+- Why: stability AND compactness — one line is both the common resolved
+  layout and the loading/degraded height; reserving the 3-row worst case
+  traded the reported futz for permanent whitespace.
+- Proof: live dashboard (9 agents) — all cards 173 px while loading and
+  after resolving (was 170→197 churn). +1 vitest (507 total) for the
+  checks toggle; e2e height-stability case unchanged (46).

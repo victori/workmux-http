@@ -19,6 +19,13 @@ interface CacheEntry<T> {
   failed: boolean
 }
 
+interface GithubIdentityEntry {
+  branch: string
+  result: GithubResolveResult | null
+  refreshAt: number
+  error: string | null
+}
+
 interface LastGood {
   list?: WorktreeRecord[]
   agents?: AgentRecord[]
@@ -34,7 +41,7 @@ export class Discovery {
   private cache: DashboardSnapshot | null = null
   private inflight: Promise<DashboardSnapshot> | null = null
   private gitCache = new Map<string, CacheEntry<GitInfo | null>>()
-  private identityCache = new Map<string, CacheEntry<{ result: GithubResolveResult; branch: string } | null>>()
+  private identityCache = new Map<string, GithubIdentityEntry>()
   private lastGood: LastGood = {}
   private readonly githubSvc: GithubStatusService | null
 
@@ -309,38 +316,50 @@ export class Discovery {
     if (!branch || !gi?.headOid) {
       return { state: 'unsupported', pr: null, ci: null, observedAt: null, attemptedAt: null, error: null }
     }
-    const cached = this.identityCache.get(w.path)
-    const usable =
-      cached && !cached.failed && cached.value && Date.now() - cached.at < BOUNDS.gitTtlMs && cached.value.branch === branch
-        ? cached.value
-        : null
-    if (!usable) {
-      // Identity resolution is local git config (no network); the status
-      // appears on the next cycle once the result is cached.
+    const entry = this.identityCache.get(w.path)
+    const cached = entry?.branch === branch ? entry : undefined
+    const expired = !cached || Date.now() >= cached.refreshAt
+    if (expired) {
+      const pending = { branch, result: cached?.result ?? null, refreshAt: Infinity, error: cached?.error ?? null }
+      this.identityCache.set(w.path, pending)
       void git
         .resolveGithubRequest(w.path, branch, gi.headOid)
+        .catch(() => ({ ok: false, reason: 'unavailable', detail: 'cannot resolve GitHub remote' }) as const)
         .then((result) => {
-          this.identityCache.set(w.path, { at: Date.now(), value: { result, branch }, failed: false })
+          if (this.identityCache.get(w.path) === pending) {
+            const error = !result.ok && result.reason === 'unavailable' ? result.detail : null
+            this.identityCache.set(w.path, {
+              branch,
+              result: error ? pending.result : result,
+              refreshAt: Date.now() + BOUNDS.githubIdentityTtlMs,
+              error,
+            })
+          }
         })
-        .catch(() => {
-          this.identityCache.set(w.path, { at: Date.now(), value: null, failed: true })
-        })
-      return undefined
     }
-    if (!usable.result.ok) {
-      return usable.result.reason === 'ambiguous'
+    if (!cached) return undefined
+    const { result, error, refreshAt } = cached
+    if (!result?.ok) {
+      if (error) return unavailableGithub(error)
+      if (!result) return undefined
+      return result.reason === 'ambiguous'
         ? unavailableGithub('GitHub remote ambiguous: multiple GitHub remotes configured')
         : { state: 'unsupported', pr: null, ci: null, observedAt: null, attemptedAt: null, error: null }
     }
-    const request = { ...usable.result.request, headOid: gi.headOid }
+    const request = { ...result.request, headOid: gi.headOid }
     githubRequests.push(request)
-    return this.githubSvc.view(request)
+    const status = this.githubSvc.view(request, !expired && refreshAt !== Infinity && !error)
+    if (!error) return status
+    return status.state === 'ready' || status.state === 'stale'
+      ? { ...status, state: 'stale', error }
+      : unavailableGithub(error)
   }
 
   /** Invalidate git-derived caches for one repo after staging/merge operations. */
   invalidateRepo(workdir: string): void {
     this.gitCache.delete(workdir)
-    this.identityCache.delete(workdir)
+    const identity = this.identityCache.get(workdir)
+    if (identity) this.identityCache.set(workdir, { ...identity, refreshAt: 0 })
   }
 
   isDependencyError(err: unknown): err is DependencyError {

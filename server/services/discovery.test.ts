@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type { AppConfig } from '../config.js'
 import { loadConfig } from '../config.js'
 import type { TmuxLike, TmuxPane, TmuxSession } from '../adapters/tmux.js'
+import * as git from '../adapters/git.js'
 import { DependencyError, type StatusPayload, type WorkmuxLike, type WorktreeRecord } from '../adapters/workmux.js'
 import type { GithubStatus } from '../../shared/types.js'
 import { Discovery } from './discovery.js'
@@ -305,7 +306,8 @@ describe('GitHub status join', () => {
       execFileSync('git', ['add', 'f.txt'], { cwd: repo })
       execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'init'], { cwd: repo })
       const gate = Promise.withResolvers<GithubStatus>()
-      const svc = new GithubStatusService({ read: () => gate.promise })
+      const provider = { read: vi.fn(() => gate.promise) }
+      const svc = new GithubStatusService(provider)
       const discovery = new Discovery(cfg, fakeTmux([]), fakeWorkmux([worktreeRecord('wt-a', { path: repo, branch: 'main' })], []), svc)
       // Cycle 1: identity resolution in flight; nothing rendered yet.
       const first = await discovery.snapshot()
@@ -339,6 +341,39 @@ describe('GitHub status join', () => {
       })
       const third = await discovery.snapshot(true)
       expect(third.worktrees[0]?.prUrl).toBe('https://github.com/acme/widgets/pull/9')
+
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+      const resolveIdentity = vi.spyOn(git, 'resolveGithubRequest')
+      try {
+        const refreshing = await discovery.snapshot(true)
+        expect(refreshing.worktrees[0]?.github).toMatchObject({ state: 'stale', pr: { number: 9 } })
+        expect(provider.read).toHaveBeenCalledTimes(1)
+        await vi.waitFor(async () => {
+          expect((await discovery.snapshot(true)).worktrees[0]?.github?.state).toBe('ready')
+        })
+        expect(provider.read).toHaveBeenCalledTimes(2)
+
+        resolveIdentity.mockResolvedValueOnce({ ok: false, reason: 'unavailable', detail: 'cannot list remotes' })
+        clock.mockReturnValue(Date.now() + 60_001)
+        await discovery.snapshot(true)
+        expect((await discovery.snapshot(true)).worktrees[0]?.github).toMatchObject({
+          state: 'stale', pr: { number: 9 }, error: 'cannot list remotes',
+        })
+        expect(provider.read).toHaveBeenCalledTimes(2)
+
+        execFileSync('git', ['remote', 'set-url', 'origin', 'https://gitlab.com/acme/widgets.git'], { cwd: repo })
+        clock.mockReturnValue(Date.now() + 60_001)
+        await vi.waitFor(async () => {
+          expect((await discovery.snapshot(true)).worktrees[0]?.github?.state).toBe('unsupported')
+        })
+        clock.mockReturnValue(Date.now() + 60_001)
+        expect((await discovery.snapshot(true)).worktrees[0]?.github?.state).toBe('unsupported')
+        expect(provider.read).toHaveBeenCalledTimes(2)
+        await resolveIdentity.mock.results.at(-1)?.value
+      } finally {
+        resolveIdentity.mockRestore()
+        clock.mockRestore()
+      }
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

@@ -51,6 +51,14 @@ select {
   height: 100dvh;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .terminal-output {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;

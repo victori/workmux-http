@@ -294,7 +294,7 @@ and review the diff for undocumented behavior changes.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  501 tests green baseline.
+  507 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

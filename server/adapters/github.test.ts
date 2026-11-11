@@ -264,6 +264,7 @@ describe('GithubProvider CI normalization', () => {
     const status = await read(t)
     expect(status.ci?.state).toBe('unknown')
     expect(status.error).toContain('GraphQL reported errors')
+    expect(status.ciLookup).toBe('retry')
   })
 })
 

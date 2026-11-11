@@ -16,8 +16,12 @@ export interface GithubTarget extends GithubRequest {
   baseRepository: string
 }
 
+interface GithubReadResult extends GithubStatus {
+  ciLookup?: 'retry' | 'bounded'
+}
+
 export interface GithubLike {
-  read(request: GithubRequest): Promise<GithubStatus>
+  read(request: GithubRequest): Promise<GithubReadResult>
 }
 
 const GITHUB_URL_RE = /^https:\/\/github\.com\/[^\s]+$/
@@ -240,7 +244,7 @@ function summarize(checks: RawCheck[], complete: boolean, commitOid: string): Ci
  * resolveGithubRequest. Never queries with client identities.
  */
 export class GithubProvider implements GithubLike {
-  async read(request: GithubRequest): Promise<GithubStatus> {
+  async read(request: GithubRequest): Promise<GithubReadResult> {
     const started = Date.now()
     const base = await this.resolveBase(request)
     if ('error' in base) return unavailable(base.error, started)
@@ -251,6 +255,7 @@ export class GithubProvider implements GithubLike {
 
     const ci = await this.lookupCi(target, started)
     const errors = [pr.warning, ci.errorText].filter((e): e is string => e !== null)
+    const ciLookup = ci.outcome === 'bounded' ? 'bounded' : ci.errorText !== null && !ci.outcome ? 'retry' : undefined
     return {
       state: 'ready',
       pr: pr.pr,
@@ -258,6 +263,7 @@ export class GithubProvider implements GithubLike {
       observedAt: Date.now(),
       attemptedAt: started,
       error: errors.length > 0 ? scrubError(errors.join('; ')) : null,
+      ...(ciLookup ? { ciLookup } : {}),
     }
   }
 
@@ -403,7 +409,7 @@ export class GithubProvider implements GithubLike {
   }
 
   /** Exact-HEAD CI with bounded cursor pagination; failure yields unknown, never empty-passing. */
-  private async lookupCi(target: GithubTarget, started: number): Promise<{ summary: CiSummary; errorText: string | null }> {
+  private async lookupCi(target: GithubTarget, started: number): Promise<{ summary: CiSummary; errorText: string | null; outcome?: 'bounded' | 'unpublished' }> {
     const [owner, repo] = target.baseRepository.split('/')
     if (!owner || !repo) return { summary: unknownCi(target.headOid), errorText: 'invalid base repository' }
     const query =
@@ -447,7 +453,7 @@ export class GithubProvider implements GithubLike {
       ]
       if (cursor) args.push('-F', `cursor=${cursor}`)
       const res = await gh(['api', 'graphql', ...args], target.worktreePath, BOUNDS.githubTimeoutMs)
-      if (res.missing) return { summary: unknownCi(target.headOid), errorText: res.error }
+      if (res.missing) return { summary: unknownCi(target.headOid), errorText: res.error ?? 'gh CLI not available' }
       if (!res.ok) return { summary: unknownCi(target.headOid), errorText: res.error ?? 'CI lookup failed' }
       const parsed = parseGraphql(res.stdout, CiResponseSchema)
       if ('error' in parsed) return { summary: unknownCi(target.headOid), errorText: parsed.error }
@@ -458,7 +464,7 @@ export class GithubProvider implements GithubLike {
       const commit = repository.object
       if (commit === null || commit === undefined) {
         // Commit not visible on the base repo: unpublished — unknown, not empty-passing.
-        return { summary: unknownCi(target.headOid), errorText: 'commit not found on GitHub' }
+        return { summary: unknownCi(target.headOid), errorText: 'commit not found on GitHub', outcome: 'unpublished' }
       }
       const rollup = commit.statusCheckRollup
       if (!rollup || !rollup.contexts) {
@@ -497,7 +503,7 @@ export class GithubProvider implements GithubLike {
         return { summary: summarize(checks, true, target.headOid), errorText: null }
       }
     }
-    return { summary: summarize(checks, false, target.headOid), errorText: 'CI pagination exhausted' }
+    return { summary: summarize(checks, false, target.headOid), errorText: 'CI pagination exhausted', outcome: 'bounded' }
   }
 }
 

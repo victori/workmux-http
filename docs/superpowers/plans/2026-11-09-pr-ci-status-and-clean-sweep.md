@@ -687,3 +687,39 @@ consumers, and phase 1 can ship before phase 2. Do not parallelize shared/types.
 server/index.ts, or Management lock changes. If using subagents, assign disjoint
 adapter/UI test work only after the contracts are reviewed; keep integration
 and deletion-policy review on the main execution path.
+
+### 2026-11-10 PR/CI row height during dashboard polling
+
+The 24px minimum row grew by 20px when a result included the 44px Checks
+button. Cards now use a single 44px row, and agent cards reserve it
+while the worktree status is absent. Long content scrolls inside the row.
+The Checks button keeps its tap target and still opens the check list.
+
+This amends the single-row layout in the
+[dashboard history](2026-11-07-workmux-http-dashboard.md) and is reflected
+in [the current specification](../../SPEC.md). INV-06 and INV-10 still
+govern provider disclosure and freshness. A Chromium fixture test
+reproduced the 20px jump before the fix and verified constant card height
+across background polls afterward. Physical Safari and live GitHub were
+outside this layout verification.
+
+### 2026-11-10 Progressive PR/CI refresh backoff
+
+An expired local identity lookup omitted its key from discovery for one
+poll. That evicted provider cache entries before their deadlines. Failed
+refreshes also bypassed backoff when a last-good result existed.
+
+Repeated no-PR results without pending CI now wait 5, 10, 20, then 30
+minutes. Provider failures, including partial CI failures, start at 15
+seconds and double to 5 minutes. Exact HEAD keys and sweep's uncached
+evidence reads still apply. Local identity refresh runs once a minute
+and retains same-branch cache entries during revalidation. Local lookup
+failure is unavailable evidence for sweep. Unsupported remotes never
+invoke the provider.
+
+[Current behavior](../../SPEC.md#github-prci-visibility-optional-overlay)
+extends INV-06 and INV-10. Timer-controlled provider tests reproduced
+missing backoff before the fix and verify the caps, reset, stale
+last-good data, and queued sweep deduplication. A real local Git repo
+with a fake provider verifies identity expiry, local lookup failure,
+and unsupported remotes. These tests do not measure live GitHub limits.

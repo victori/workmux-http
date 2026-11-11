@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test'
  */
 
 async function dashboardWithWorktreeGithub(page: Page, handle: string, mutate: (wt: Record<string, unknown>) => void) {
-  await page.route('**/api/dashboard', async (route) => {
+  await page.route((url) => url.pathname === '/api/dashboard', async (route) => {
     const res = await route.fetch()
     const body = await res.json()
     const wt = (body.worktrees as Array<Record<string, unknown>>).find((w) => w.handle === handle)
@@ -97,4 +97,44 @@ test.describe('PR/CI status (fixture mode)', () => {
       }
     })
   }
+
+  test('should keep agent card height stable across PR/CI polls', async ({ page }) => {
+    let github: unknown = { state: 'loading' }
+    await dashboardWithWorktreeGithub(page, 'feat-timezone', (worktree) => {
+      worktree.github = github
+    })
+    await page.goto('/')
+    const agentCard = page.locator('div.rounded-xl.border').filter({
+      has: page.getByRole('button', { name: /feat-timezone/ }),
+    })
+    await expect(agentCard.getByText('PR/CI loading…')).toBeVisible()
+    const { height, width } = (await agentCard.boundingBox())!
+
+    github = {
+      state: 'stale',
+      pr: pr({}),
+      ci: ci({ checks: [{ name: 'integration', state: 'passing', url: null }] }),
+      observedAt: at(),
+      attemptedAt: at(),
+      error: null,
+    }
+    const checks = agentCard.getByRole('button', { name: /Checks \(1\)/ })
+    await expect(checks).toBeVisible()
+    expect((await checks.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+    expect((await agentCard.boundingBox())?.height).toBe(height)
+
+    github = { state: 'unavailable', error: 'GitHub authentication is required. '.repeat(20) }
+    await expect(agentCard.getByText(/GitHub unavailable/)).toBeVisible()
+    expect(await agentCard.boundingBox()).toMatchObject({ height, width })
+    const strip = agentCard.locator('.overflow-x-auto')
+    expect(await strip.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+
+    github = undefined
+    await expect(agentCard.getByText(/GitHub unavailable/)).toHaveCount(0)
+    expect((await agentCard.boundingBox())?.height).toBe(height)
+
+    github = { state: 'ready', pr: null, ci: ci(), observedAt: at(), attemptedAt: at(), error: null }
+    await expect(agentCard.getByText('No PR')).toBeVisible()
+    expect((await agentCard.boundingBox())?.height).toBe(height)
+  })
 })

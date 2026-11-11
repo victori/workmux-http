@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { GithubStatus } from '@shared/types'
 
@@ -121,8 +121,64 @@ it('shows failing counts and check links from the rollup', () => {
     />,
   )
   expect(screen.getByText(/CI 2 failing/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /Checks \(2\)/ }))
   expect(screen.getByRole('link', { name: 'integration' })).toHaveAttribute('href', 'https://github.com/acme/widgets/actions/runs/1')
   expect(screen.getByText('legacy')).toBeInTheDocument()
+})
+
+it('reserves the same fixed-height strip for every state', () => {
+  const states: Array<GithubStatus | undefined> = [
+    undefined,
+    status({ state: 'loading', observedAt: null, attemptedAt: Date.now() }),
+    status({ state: 'unsupported' }),
+    status({ state: 'unavailable', error: 'gh: rate limited' }),
+    status({ pr: openPr(), ci: ci(), error: 'commit not found on GitHub' }),
+    status({ state: 'stale', pr: openPr({ state: 'merged', headOid: 'b'.repeat(40) }), ci: ci({ state: 'unknown', complete: false }) }),
+  ]
+  const { rerender, container } = render(<PrCiStatus status={states[0]} />)
+  for (const current of states) {
+    rerender(<PrCiStatus status={current} />)
+    const strip = current?.state === 'ready' || current?.state === 'stale' ? container.firstElementChild?.firstElementChild : container.firstElementChild
+    expect(strip).toHaveClass('h-11', 'overflow-x-auto', 'whitespace-nowrap')
+  }
+})
+
+it('keeps resolved badges on one strip with the error disclosed', () => {
+  const { container } = render(
+    <PrCiStatus
+      status={status({
+        pr: openPr(),
+        ci: ci({
+          state: 'failing',
+          complete: true,
+          counts: { passing: 3, failing: 1, pending: 0, neutral: 0, unknown: 0 },
+        }),
+        error: 'commit not found on GitHub',
+      })}
+    />,
+  )
+  const strip = container.querySelector('.h-11') as HTMLElement
+  // One row only: PR chip, CI badge, error, age all inline.
+  expect(strip.children).toHaveLength(4)
+  expect(strip.querySelector('a')).not.toBeNull()
+  expect(strip.textContent).toContain('commit not found on GitHub')
+})
+
+it('expands the checks list below the strip on demand', () => {
+  render(
+    <PrCiStatus
+      status={status({
+        ci: ci({
+          checks: [{ name: 'build', state: 'passing', url: 'https://github.com/acme/widgets/actions/runs/1' }],
+        }),
+      })}
+    />,
+  )
+  const button = screen.getByRole('button', { name: /Checks \(1\)/ })
+  expect(button).toHaveAttribute('aria-expanded', 'false')
+  fireEvent.click(button)
+  expect(screen.getByRole('button', { name: /Checks \(1\)/ })).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByRole('link', { name: 'build' })).toBeInTheDocument()
 })
 
 it('discloses unavailable and loading states without claiming offline', () => {

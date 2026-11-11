@@ -379,8 +379,17 @@ export class SweepService {
     } else {
       const identity = await this.resolveIdentity(facts.canonicalPath, facts.branch, facts.headOid)
       if (!identity.ok) {
-        githubStatus =
-          identity.reason === 'ambiguous' ? unavailableStatus('GitHub remote ambiguous; PR state could not be verified') : UNSUPPORTED_STATUS
+        switch (identity.reason) {
+          case 'unsupported':
+            githubStatus = UNSUPPORTED_STATUS
+            break
+          case 'ambiguous':
+            githubStatus = unavailableStatus('GitHub remote ambiguous; PR state could not be verified')
+            break
+          case 'unavailable':
+            githubStatus = unavailableStatus(identity.detail)
+            break
+        }
       } else {
         const request: GithubRequest = { ...identity.request, worktreePath: facts.canonicalPath, headOid: facts.headOid }
         githubStatus = await this.deps.github.fresh(request)

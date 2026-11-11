@@ -108,7 +108,7 @@ export function AgentCard({
 
   return (
     <div
-      className={`rounded-xl border bg-surface transition-colors ${
+      className={`min-w-0 rounded-xl border bg-surface transition-colors ${
         selected ? 'border-accent ring-2 ring-accent/40' : 'border-line'
       }`}
     >
@@ -165,11 +165,9 @@ export function AgentCard({
         </div>
         {agent.title && <p className="mt-1.5 line-clamp-2 text-xs text-fg-muted">{agent.title}</p>}
       </button>
-      {github !== undefined && (
-        <div className="px-2 pt-1.5">
-          <PrCiStatus status={github} />
-        </div>
-      )}
+      <div className="px-2 pt-1.5">
+        <PrCiStatus status={github} />
+      </div>
       <div className="flex items-center justify-end gap-1 border-t border-line px-2 py-1">
         {note && (
           <span

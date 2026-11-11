@@ -84,7 +84,7 @@ export function WorktreeCard({
   }
 
   return (
-    <div className={`rounded-xl border bg-surface p-3 ${selected ? 'border-accent ring-2 ring-accent/40' : 'border-line'}`}>
+    <div className={`min-w-0 rounded-xl border bg-surface p-3 ${selected ? 'border-accent ring-2 ring-accent/40' : 'border-line'}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-fg">
           {hotkey !== undefined && (
