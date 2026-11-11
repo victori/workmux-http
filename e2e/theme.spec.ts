@@ -11,7 +11,7 @@ test.describe('theme switching (fixture mode)', () => {
     await page.getByRole('button', { name: 'Theme' }).click()
     const sheet = page.getByRole('dialog', { name: 'Theme' })
     await expect(sheet.getByRole('radio', { name: /Night/ })).toBeChecked()
-    await sheet.getByRole('radio', { name: /Gruvbox/ }).click()
+    await sheet.getByRole('radio', { name: /^Gruvbox$/ }).click()
 
     await bodyBg('rgb(40, 40, 40)')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'gruvbox')
@@ -23,9 +23,26 @@ test.describe('theme switching (fixture mode)', () => {
     await page.getByRole('button', { name: 'Theme' }).click()
     await page
       .getByRole('dialog', { name: 'Theme' })
-      .getByRole('radio', { name: /Twilight/ })
+      .getByRole('radio', { name: /^Twilight$/ })
       .click()
     await bodyBg('rgb(20, 20, 20)')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'twilight')
+  })
+
+  test('should apply a light theme with light color-scheme and persist it', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Theme' }).click()
+    const sheet = page.getByRole('dialog', { name: 'Theme' })
+    await expect(sheet.getByText('Light', { exact: true })).toBeVisible()
+    await sheet.getByRole('radio', { name: /^GitHub Light$/ }).click()
+
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'github-light')
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'light')
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff')
+
+    await page.reload()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'github-light')
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
   })
 })

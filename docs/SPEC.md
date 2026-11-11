@@ -377,7 +377,11 @@ the visible viewport, never the expanded grid.
   remote).
 - **Worktrees**: create form (project/branch/prompt/profile), merge/remove/
   stop behind exact-target confirm dialogs.
-- **Palette + shortcuts**: Alt+←, Esc, `:`, ⌘P, `/`, j/k, 1-9.
+- **Palette + shortcuts**: Alt+←, Esc, `:`, ⌘⇧P, `/`, j/k, 1-9.
+- **Themes**: ten palettes (5 dark: night/gruvbox/twilight/dracula/
+  catppuccin-dark; 5 light: github-light/solarized-light/catppuccin-light/
+  one-light/gruvbox-light), grouped picker, durable pref, CSS-var override +
+  `color-scheme` per mode, per-theme xterm palette, WCAG-checked palettes.
 - Mobile-first: 44px tap targets, iOS zoom-guard inputs, `dvh` layouts,
   `md:` = iPad.
 

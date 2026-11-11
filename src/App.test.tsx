@@ -171,6 +171,14 @@ describe('App agent mode routing', () => {
     expect(screen.getByTestId('reader')).toHaveAttribute('data-mode', 'reader')
   })
 
+  it('opens the command palette on ⌘⇧P but leaves plain ⌘P for browser print', () => {
+    render(<App />)
+    fireEvent.keyDown(document.body, { key: 'p', metaKey: true })
+    expect(screen.queryByTestId('palette')).toBeNull()
+    fireEvent.keyDown(document.body, { key: 'P', metaKey: true, shiftKey: true })
+    expect(screen.getByTestId('palette')).toBeInTheDocument()
+  })
+
   it('switching agents resets to reader mode and updates recents', () => {
     render(<App />)
     fireEvent.click(screen.getByText('dash-open-terminal'))

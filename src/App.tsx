@@ -158,7 +158,7 @@ export default function App() {
             onClick={() => setPaletteOpen(true)}
             className="rounded-lg border border-line px-3 py-2 text-left text-sm text-fg-muted hover:bg-surface-2"
           >
-            ⌘P Commands <span className="text-fg-muted/60">(:)</span>
+            ⌘⇧P Commands <span className="text-fg-muted/60">(:)</span>
           </button>
         </nav>
         <div className="mt-auto px-4 py-3 text-xs text-fg-muted">

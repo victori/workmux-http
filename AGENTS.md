@@ -154,7 +154,7 @@ it the default in code or docs.
 - `server/config.ts` — env parsing + `BOUNDS` limits
 - `server/security.ts` — host/origin/header gates (no login by design)
 - `server/exec.ts` — argv-only subprocess gateway
-- `src/App.tsx` — route union, keyboard shortcuts (Alt+←, Esc, `:`, ⌘P,
+- `src/App.tsx` — route union, keyboard shortcuts (Alt+←, Esc, `:`, ⌘⇧P,
   `/`, j/k, 1-9), bottom nav + iPad sidebar
 - `src/lib/api.ts` — typed API client, `MUTATION_HEADER`, `encodeId`
 - `vite.config.ts` / `vitest.config.ts` / `playwright.config.ts` — toolchain
@@ -294,7 +294,7 @@ and review the diff for undocumented behavior changes.
 
 - **Vitest 5** with projects: `node` (server/shared/integration) and `dom`
   (jsdom, `src/**/*.test.tsx`, setup `test/setup.ts` — Web Storage shim).
-  507 tests green baseline.
+  519 tests green baseline.
 - Conventions: server/integration/e2e use `test('should…')`; client
   `src/` tests use third-person `it('renders …')` without "should".
   Colocated `*.test.(ts|tsx)`; component tests add

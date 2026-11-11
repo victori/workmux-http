@@ -1048,3 +1048,47 @@ original requirements above remain in force unless noted.
 - Proof: live dashboard (9 agents) — all cards 173 px while loading and
   after resolving (was 170→197 churn). +1 vitest (507 total) for the
   checks toggle; e2e height-stability case unchanged (46).
+
+### 2026-11-10: command-palette shortcut label corrected to ⌘⇧P
+
+- Changed: sidebar button, README shortcut table, SPEC §8, and AGENTS.md
+  advertised `⌘P`, but the actual binding (App.tsx) is `⌘⇧P` (or `:`).
+  Plain `⌘P` was never bound — deliberately, so browser print keeps
+  working. Labels/docs now show the true chord `⌘⇧P`.
+- Why: user-visible label claimed a shortcut that doesn't exist (and would
+  hijack print if it did).
+- Verification: +1 vitest (514 total) — plain ⌘P leaves the palette closed,
+  ⌘⇧P opens it.
+
+### 2026-11-10: five popular light themes (8 total, grouped picker)
+
+- Changed: `themes.ts` gains GitHub Light, Solarized Light, Catppuccin
+  Latte, One Light, Gruvbox Light alongside the three dark palettes. New
+  `mode: 'light' | 'dark'` on `Theme` drives `color-scheme` in
+  `applyTheme` (native scrollbars/form widgets follow); the ⚙ sheet groups
+  themes under Dark/Light headers. Canonical palette values, with three
+  muted-text nudges where the original failed AA on the theme's own
+  background (Catppuccin subtext→subtext1, One Light gray, Gruvbox gray
+  →gray 243).
+- Why: dark-only theming excluded daylight/mobile use; these five are the
+  most popular light editor palettes.
+- Verification: +4 vitest (518 total) — WCAG contract (light bg luminance
+  >0.5, fg/bg ≥7:1, muted ≥4.5:1), mode/id consistency, color-scheme
+  switching, grouped picker + light selection; +1 e2e (47) — GitHub Light
+  applies, tints chrome, persists across reload. Existing Gruvbox radio
+  matchers tightened (`/^Gruvbox$/`) for the new "Gruvbox Light" sibling.
+
+### 2026-11-10: Dracula + Catppuccin Mocha dark themes (10 total)
+
+- Changed: `themes.ts` gains Dracula and Catppuccin Mocha, completing a
+  5-dark/5-light registry. Dracula's canonical comment tone (#6272a4)
+  fails AA on its own background (3.0:1) → muted/stale use a lightened
+  same-hue #8b95c9 (4.9:1); Mocha is 100% official values (mantle bg,
+  base surface, surface0/1 elevation). The WCAG contract now covers dark
+  themes too (bg luminance <0.5, fg/bg ≥7:1, muted ≥4.5:1) — existing
+  night/gruvbox/twilight pass unchanged. `isThemeId` negative probe moved
+  to `monokai` now that dracula is real.
+- Why: the two most-requested dark editor palettes; rounds out the set.
+- Verification: +1 vitest (519 total) dark-contrast contract, picker test
+  lists both; live proof on :3000 (dracula #282a36/card #343746, mocha
+  #181825/card #1e1e2e, color-scheme dark, chrome tint follows).

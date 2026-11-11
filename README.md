@@ -227,9 +227,14 @@ protection).
   (merge commits show parent-1 changes; root commits diff against the empty
   tree). Read-only history view — no staging or worktree actions there.
 
-- **Themes** — Night (default), Gruvbox, and Twilight, switchable from the ⚙
-  sheet on the dashboard; the choice is durable (all tabs) and applies to
-  every surface including the advanced terminal and the iPhone chrome tint.
+- **Themes** — ten palettes in two groups: dark — Night (default), Gruvbox,
+  Twilight, Dracula, Catppuccin Mocha; light — GitHub Light, Solarized
+  Light, Catppuccin Latte, One Light, Gruvbox Light — switchable from the ⚙
+  sheet on the dashboard (every palette is WCAG-checked in tests: ≥7:1 body
+  text, ≥4.5:1 muted text).
+  The choice is durable (all tabs) and applies to every surface including the
+  advanced terminal, native control color-scheme (scrollbars, form widgets),
+  and the iPhone chrome tint.
 - **Agent view** — one target, two modes (Reader / Terminal) via the header
   mode control; the route keeps target + mode together, and Reader stays
   mounted while Terminal is active (drafts and scroll position survive the
@@ -356,7 +361,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 507 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 519 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,
@@ -388,7 +393,7 @@ Design decisions worth knowing:
 | `1-9` window select, `Tab` cycle | tap any agent card / header switcher (no window concept) |
 | `d` dashboard | Dashboard tab |
 | `o` open worktree | Worktrees tab, card actions, create sheet |
-| `p` / `:` command mode | ⌘P / `:` command palette |
+| `p` / `:` command mode | ⌘⇧P / `:` command palette |
 | `s` status | connection banner + `/api/health` |
 | `/` search | search field (project, name, branch) |
 | `F`/`f` follow/unfollow | auto-follow at bottom; *Jump to latest* breaks it |
