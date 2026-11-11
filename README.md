@@ -132,10 +132,50 @@ starting the other, or run them side by side with e.g.
 variable). `/` only serves the SPA from `npm start` (built `dist/public`);
 during `npm run dev` open **5173**, not 3000.
 
-Requirements: macOS/Linux with `tmux` on PATH, `workmux` installed, and the
-default tmux server already running your sessions (or set
-`WORKMUX_TMUX_SOCKET`). Node ≥ 22. Optional: `gh` CLI (GitHub PR/CI status;
-must be authenticated — `gh auth login`), `git`.
+## Prerequisites
+
+External binaries are resolved from `PATH` at runtime. Required tools fail the
+dashboard's health sources when missing; optional ones degrade honestly
+(the affected feature reports unavailable — nothing is fabricated).
+
+| Tool | Required | Minimum | Used for | Verify |
+| --- | --- | --- | --- | --- |
+| `tmux` | **yes** | 3.2 (needs `paste-buffer -p`) | session/pane discovery, output capture, message delivery, owned advanced-terminal sessions | `tmux -V` |
+| `workmux` | **yes** | recent release | agent + worktree discovery (`list-all`, `status --all`) | `workmux --version` |
+| `git` | **yes** | 2.11 (needs `status --porcelain=v2`) | worktree status, diffs, hunk staging, merge, push | `git --version` |
+| `gh` | optional | — | GitHub PR/CI overlay on cards and clean-sweep evidence; must be authenticated (`gh auth login`); `github.com` remotes only | `gh auth status` |
+
+Also needed:
+
+- **Node ≥ 22** and npm (lockfileVersion 3). macOS and Linux; Windows is not
+  supported (POSIX tmux sockets).
+- **Native build toolchain** — Python 3, `make`, and a C++ compiler (Xcode
+  Command Line Tools on macOS: `xcode-select --install`) to compile
+  `node-pty`. Approve the build script when npm prompts (`allowScripts` is
+  pinned in `package.json`) or rebuild explicitly:
+  `npx node-gyp rebuild --directory node_modules/node-pty`. Without the
+  native binding everything works **except** the advanced terminal, which
+  refuses to attach.
+- A **running tmux server** that already hosts your workmux sessions — the
+  default socket is auto-detected, or set `WORKMUX_TMUX_SOCKET` explicitly.
+
+No tmux/workmux installed? Run fixture mode with
+`WORKMUX_HTTP_FIXTURES=$PWD/fixtures` — the dashboard renders committed
+sample data instead (see [Environment](#environment)); the advanced
+terminal and sweep endpoints refuse in fixture mode.
+
+On startup the server probes these tools and prints what's wrong instead of
+failing silently — `WARNING:` on stderr for missing/too-old required tools
+(it still boots; `/api/health` keeps reporting the degraded sources),
+`note:` on stdout when the optional `gh` is absent:
+
+```
+workmux-http listening on http://127.0.0.1:3000
+WARNING: tmux: not found on PATH (required) — no sessions, panes, or message delivery; see README Prerequisites
+WARNING: workmux: not found on PATH (required) — agent/worktree discovery will report dependency_error
+WARNING: git: not found on PATH (required) — status, diffs, staging, merge, and push are unavailable
+note: gh: not found — GitHub PR/CI status stays disabled (optional)
+```
 
 ## Environment
 
@@ -361,7 +401,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 519 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 526 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,

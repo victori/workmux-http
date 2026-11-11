@@ -341,6 +341,13 @@ the visible viewport, never the expanded grid.
 | `WORKMUX_<KIND>_COMMIT_CMD` | none | direct-commit command per agent kind (`{{COMMIT_MSG}}` placeholder, quote-context escaped; OMP≡OPENCODE alias) |
 | `WORKMUX_<KIND>_PUSH_CMD` | none | direct-push command per agent kind |
 
+Startup prerequisite probes: after listening, the server checks PATH for
+`tmux ≥ 3.2`, `workmux`, `git ≥ 2.11` (missing/too-old ⇒ `WARNING:` lines on
+stderr; the server still boots and health reports the degraded sources) and
+`gh` (missing ⇒ `note:` on stdout; installed-but-unauthenticated ⇒
+`WARNING:`). An unresolvable default tmux socket never kills startup. No
+probes run in fixture mode.
+
 ## 8. UI capability inventory (behavioral, not visual)
 
 - **Dashboard**: agents/worktrees tabs, search/sort/filters (agent search

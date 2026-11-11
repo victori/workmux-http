@@ -1092,3 +1092,21 @@ original requirements above remain in force unless noted.
 - Verification: +1 vitest (519 total) dark-contrast contract, picker test
   lists both; live proof on :3000 (dracula #282a36/card #343746, mocha
   #181825/card #1e1e2e, color-scheme dark, chrome tint follows).
+
+### 2026-11-10: startup prerequisite warnings (+ no-crash when tmux absent)
+
+- Changed: new `server/prereq.ts` probes PATH after listen — tmux ≥3.2,
+  workmux, git ≥2.11 (missing/too-old ⇒ `WARNING:` stderr, server still
+  boots), gh (missing ⇒ `note:` stdout; unauthenticated ⇒ `WARNING:`);
+  fixture mode skips all probes. Minimums derive from argv actually used
+  (`paste-buffer -p`, `status --porcelain=v2`). Also fixed a real crash
+  found by live stripped-PATH boot: `Tmux.resolveDefaultSocket()` rejected
+  uncaught when tmux was absent and killed the process before it could
+  report anything — now `.catch(() => null)`; health reports the degraded
+  source.
+- Why: silent degradation on a misconfigured host; missing tmux was fatal.
+- Verification: +7 vitest (526 total) via injected fake runner (missing
+  required trio, fixture skip, old tmux/git, gh unauthenticated, format).
+  Live proof: `env -i PATH=<node-only>` boot prints the three WARNINGs +
+  note and serves `/api/health` with `tmuxReachable:false` instead of
+  dying with `spawn tmux ENOENT`.

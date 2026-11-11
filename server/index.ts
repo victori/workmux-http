@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { loadConfig, BOUNDS, type AppConfig } from './config.js'
 import { checkRequest } from './security.js'
+import { checkPrerequisites, formatPrereqIssue } from './prereq.js'
 import { Tmux } from './adapters/tmux.js'
 import { Workmux, DependencyError } from './adapters/workmux.js'
 import { SAFE_REMOTE, SAFE_REV } from './adapters/git.js'
@@ -578,12 +579,19 @@ const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}
 if (isMain) {
   const cfg = loadConfig()
   if (!cfg.fixtureDir && !cfg.tmuxSocket) {
-    cfg.tmuxSocket = await Tmux.resolveDefaultSocket()
+    // Missing/unreachable tmux must not kill startup: leave the socket
+    // unresolved, health reports the degraded source, prereq warnings explain.
+    cfg.tmuxSocket = await Tmux.resolveDefaultSocket().catch(() => null)
   }
   const { app, deps } = buildApp(cfg)
   app.listen({ host: cfg.bind, port: cfg.port }).then(async () => {
     process.stdout.write(`workmux-http listening on http://${cfg.bind}:${cfg.port}\n`)
     if (cfg.fixtureDir) process.stdout.write(`fixture mode: ${cfg.fixtureDir}\n`)
+    for (const issue of await checkPrerequisites({ fixtureMode: Boolean(cfg.fixtureDir) })) {
+      const line = `${formatPrereqIssue(issue)}\n`
+      if (issue.level === 'info') process.stdout.write(line)
+      else process.stderr.write(line)
+    }
     if (cfg.allowAnyHost) {
       process.stderr.write(
         'WARNING: WORKMUX_ALLOWED_HOSTS=* accepts any Host header. There is no login, and ' +
