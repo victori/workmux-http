@@ -2,13 +2,15 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { loadConfig } from '../config.js'
 import type { TmuxLike, TmuxPane, TmuxSession } from '../adapters/tmux.js'
+import type { WorktreeView } from '../../shared/types.js'
 import { Workmux } from '../adapters/workmux.js'
 import { Discovery } from './discovery.js'
 import { BadRequestError, Management, TargetNotFoundError } from './management.js'
 import { Operations } from './operations.js'
+import { TargetLocks } from './target-locks.js'
 import { worktreeId } from '../targets.js'
 
 /**
@@ -54,6 +56,65 @@ const idleTmux: TmuxLike = {
 
 function git(args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+}
+
+/**
+ * Park tracked pending changes, then produce a UU conflict on base.txt
+ * (main vs side edits of the same line). Returns the pre-conflict sha.
+ */
+function beginConflict(): string {
+  const initSha = git(['rev-parse', 'HEAD']).trim()
+  git(['reset', '-q'])
+  git(['stash', '-q']) // tracked edits only; untracked paths stay pending
+  writeFileSync(path.join(repo, 'base.txt'), 'base\nMAIN\n')
+  git(['add', 'base.txt'])
+  git(['commit', '-qm', 'main change'])
+  git(['checkout', '-q', '-b', 'side', initSha])
+  writeFileSync(path.join(repo, 'base.txt'), 'base\nSIDE\n')
+  git(['add', 'base.txt'])
+  git(['commit', '-qm', 'side change'])
+  git(['checkout', '-q', 'main'])
+  spawnSync('git', ['merge', 'side', '-m', 'x'], { cwd: repo, encoding: 'utf8' })
+  return initSha
+}
+
+/** Abort the merge and restore the exact pre-conflict pending state. */
+function endConflict(initSha: string): void {
+  spawnSync('git', ['merge', '--abort'], { cwd: repo, encoding: 'utf8' })
+  git(['checkout', '-q', 'main'])
+  git(['branch', '-q', '-D', 'side'])
+  git(['reset', '--hard', initSha])
+  git(['stash', 'pop', '-q'])
+}
+
+/** Discovery with a directly controllable worktree map (queue-safety tests). */
+class FakeDiscovery extends Discovery {
+  targets = new Map<string, WorktreeView>()
+  /** Resolved synchronously during the first worktreeTargets() call. */
+  readonly firstLookup = Promise.withResolvers<void>()
+  override async worktreeTargets(): Promise<Map<string, WorktreeView>> {
+    this.firstLookup.resolve()
+    return this.targets
+  }
+}
+
+function viewFor(p: string): WorktreeView {
+  return {
+    id: worktreeId('repo', p),
+    project: 'repo',
+    projectPath: p,
+    handle: 'repo',
+    branch: 'main',
+    path: p,
+    isMain: true,
+    mode: 'window',
+    hasUncommittedChanges: true,
+    isOpen: true,
+    agentStatuses: ['waiting'],
+    createdAt: 1700000000,
+    prUrl: null,
+    unpushed: null,
+  }
 }
 
 async function settle(opId: string): Promise<ReturnType<Operations['get']>> {
@@ -176,6 +237,55 @@ describe('addPending', () => {
 
   test('should 404 for unmanaged worktrees', async () => {
     await expect(management.addPending('wt_nope', ['x'])).rejects.toBeInstanceOf(TargetNotFoundError)
+  })
+
+  test('should refuse conflicted paths and leave the conflict unresolved in the index', async () => {
+    const initSha = beginConflict()
+    try {
+      expect(git(['status', '--porcelain'])).toMatch(/^UU base\.txt/m)
+      const r = await management.addPending(wtId(), ['base.txt'])
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain('unresolved merge conflicts')
+      expect(r.offenders).toEqual(['base.txt'])
+      // git add never ran: the path is still a conflict, not recorded resolved
+      expect(git(['status', '--porcelain'])).toMatch(/^UU base\.txt/m)
+    } finally {
+      endConflict(initSha)
+    }
+  })
+
+  test('should reject a mixed clean+conflicted selection without staging anything', async () => {
+    const initSha = beginConflict()
+    try {
+      const r = await management.addPending(wtId(), ['new1.txt', 'base.txt'])
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain('unresolved merge conflicts')
+      expect(r.offenders).toEqual(['base.txt'])
+      const por = git(['status', '--porcelain'])
+      expect(por).toContain('?? new1.txt')
+      expect(por).toMatch(/^UU base\.txt/m)
+    } finally {
+      endConflict(initSha)
+    }
+  })
+
+  test('should revalidate management in-lock and reject when the target vanished while queued', async () => {
+    const cfg = { ...loadConfig({}), fixtureDir }
+    const disc = new FakeDiscovery(cfg, idleTmux, new Workmux())
+    disc.targets.set(wtId(), viewFor(repo))
+    const locks = new TargetLocks(ops)
+    const mgmt = new Management(cfg, idleTmux, new Workmux(), disc, ops, locks)
+    const gate = Promise.withResolvers<void>()
+    void locks.run(wtId(), () => gate.promise)
+    const p = mgmt.addPending(wtId(), ['new1.txt'])
+    // firstLookup resolves inside addPending's pre-lock lookup; that call's
+    // continuation (which queues the job behind the gate) was registered
+    // first, so the request is provably queued once we resume here.
+    await disc.firstLookup.promise
+    disc.targets.delete(wtId())
+    gate.resolve()
+    await expect(p).rejects.toBeInstanceOf(TargetNotFoundError)
+    expect(git(['status', '--porcelain'])).toContain('?? new1.txt')
   })
 })
 

@@ -5,10 +5,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { loadConfig, BOUNDS } from '../config.js'
 import type { TmuxLike, TmuxPane, TmuxSession } from '../adapters/tmux.js'
+import type { WorktreeView } from '../../shared/types.js'
 import { Workmux, type StatusPayload } from '../adapters/workmux.js'
 import { Discovery } from './discovery.js'
-import { Management } from './management.js'
+import { Management, TargetNotFoundError } from './management.js'
 import { Operations } from './operations.js'
+import { TargetLocks } from './target-locks.js'
 import { worktreeId } from '../targets.js'
 
 /**
@@ -66,6 +68,36 @@ const idleTmux: TmuxLike = {
 
 function git(args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+}
+
+/** Discovery with a directly controllable worktree map (queue-safety tests). */
+class FakeDiscovery extends Discovery {
+  targets = new Map<string, WorktreeView>()
+  /** Resolved synchronously during the first worktreeTargets() call. */
+  readonly firstLookup = Promise.withResolvers<void>()
+  override async worktreeTargets(): Promise<Map<string, WorktreeView>> {
+    this.firstLookup.resolve()
+    return this.targets
+  }
+}
+
+function viewFor(p: string): WorktreeView {
+  return {
+    id: worktreeId('repo', p),
+    project: 'repo',
+    projectPath: p,
+    handle: 'repo',
+    branch: 'main',
+    path: p,
+    isMain: true,
+    mode: 'window',
+    hasUncommittedChanges: true,
+    isOpen: true,
+    agentStatuses: ['waiting'],
+    createdAt: 1700000000,
+    prUrl: null,
+    unpushed: null,
+  }
 }
 
 beforeAll(() => {
@@ -215,6 +247,31 @@ describe('Management hunk staging (real git)', () => {
       piece: '@@ -1,1 +1,1 @@\n-INJECTED\n+EVIL',
     })
     expect(res.ok).toBe(false)
+  })
+
+  test('should reject a queued hunk stage once the target stops being managed', async () => {
+    const diff = await management.diff(wtId(), 'wip')
+    const cfg = { ...loadConfig({}), fixtureDir }
+    const disc = new FakeDiscovery(cfg, idleTmux, new Workmux())
+    disc.targets.set(wtId(), viewFor(repo))
+    const ops = new Operations()
+    const locks = new TargetLocks(ops)
+    const mgmt = new Management(cfg, idleTmux, new Workmux(), disc, ops, locks)
+    const gate = Promise.withResolvers<void>()
+    void locks.run(wtId(), () => gate.promise)
+    const p = mgmt.hunkAction(wtId(), 'stage', {
+      snapshotId: diff.snapshotId,
+      file: diff.files[0]!.path,
+      hunkIndex: 0,
+    })
+    // firstLookup resolves inside hunkAction's pre-lock lookup; that call's
+    // continuation (which queues the job behind the gate) was registered
+    // first, so the request is provably queued once we resume here.
+    await disc.firstLookup.promise
+    disc.targets.delete(wtId())
+    gate.resolve()
+    await expect(p).rejects.toBeInstanceOf(TargetNotFoundError)
+    expect(git(['diff', '--cached'])).toBe('')
   })
 
   test('should report unborn repositories explicitly', async () => {

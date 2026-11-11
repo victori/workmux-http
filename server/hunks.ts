@@ -25,6 +25,47 @@ export interface ParsedFile {
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
+/** Decode a Git C-style quoted path token (`"caf\303\251.txt"`) into real UTF-8 text. */
+function unquoteGitPath(raw: string): string {
+  if (raw.length < 2 || !raw.startsWith('"') || !raw.endsWith('"')) return raw
+  const inner = raw.slice(1, -1)
+  const bytes: number[] = []
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i]!
+    if (c !== '\\') {
+      bytes.push(c.charCodeAt(0))
+      continue
+    }
+    const e = inner[++i]
+    if (e === undefined) {
+      bytes.push(92)
+      break
+    }
+    switch (e) {
+      case 'n': bytes.push(10); break
+      case 't': bytes.push(9); break
+      case 'b': bytes.push(8); break
+      case 'a': bytes.push(7); break
+      case 'f': bytes.push(12); break
+      case 'v': bytes.push(11); break
+      case '\\': bytes.push(92); break
+      case '"': bytes.push(34); break
+      default: {
+        if (e >= '0' && e <= '7') {
+          let val = e.charCodeAt(0) - 48
+          for (let d = 1; d < 3 && inner[i + 1]! >= '0' && inner[i + 1]! <= '7'; d++) {
+            val = val * 8 + (inner[++i]!.charCodeAt(0) - 48)
+          }
+          bytes.push(val)
+        } else {
+          bytes.push(92, e.charCodeAt(0))
+        }
+      }
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
+}
+
 export function parseDiff(text: string): ParsedFile[] {
   const files: ParsedFile[] = []
   let current: ParsedFile | null = null
@@ -48,14 +89,16 @@ export function parseDiff(text: string): ParsedFile[] {
     fileLines = []
   }
 
-  for (const line of text.split('\n')) {
+  const arr = text.split('\n')
+  for (let i = 0; i < arr.length; i++) {
+    const line = arr[i]!
     if (line.startsWith('diff --git ')) {
       flushFile()
       fileLines.push(line)
       const m = /^diff --git a\/(.*?) b\/(.*)$/.exec(line)
       current = {
-        path: m?.[2] ?? '',
-        oldPath: m?.[1] ?? null,
+        path: m ? unquoteGitPath(m[2]!) : '',
+        oldPath: m ? unquoteGitPath(m[1]!) : null,
         status: 'modified',
         binary: false,
         additions: 0,
@@ -85,14 +128,25 @@ export function parseDiff(text: string): ParsedFile[] {
       current.status = 'renamed'
       continue
     }
-    if (line.startsWith('--- ')) current.oldPath = line.slice(4).replace(/^a\//, '')
-    if (line.startsWith('+++ ')) current.path = line.slice(4).replace(/^b\//, '')
+    // `--- `/`+++ ` are file headers only while no hunk is open; inside a
+    // hunk they are content lines (pushed and counted below).
+    if (!hunk) {
+      if (line.startsWith('--- ') && line.slice(4) !== '/dev/null') {
+        current.oldPath = unquoteGitPath(line.slice(4).replace(/^a\//, ''))
+      }
+      if (line.startsWith('+++ ') && line.slice(4) !== '/dev/null') {
+        current.path = unquoteGitPath(line.slice(4).replace(/^b\//, ''))
+      }
+    }
     if (HUNK_RE.test(line)) {
       flushHunk()
       hunk = [line]
       continue
     }
     if (hunk && (/^[-+ ]/.test(line) || line === '' || line.startsWith('\\'))) {
+      // A trailing '' after the file's final newline is a split artifact,
+      // not a blank context line; pushing it would fake an extra context row.
+      if (line === '' && i === arr.length - 1) continue
       hunk.push(line)
       if (line.startsWith('+')) current.additions++
       if (line.startsWith('-')) current.deletions++
@@ -142,10 +196,13 @@ export function buildHunkPatch(file: { path: string; oldPath: string | null; sta
 
 /**
  * Split a hunk into pieces at context gaps between change runs, like
- * `git add -p` split. Each piece keeps up to 3 context lines around its changes.
+ * `git add -p` split. Each piece keeps only unchanged context around its
+ * changes (up to 3 lines per side) so pieces never absorb a neighbor's
+ * +/- lines and each applies cleanly.
  */
 export function splitHunkText(hunkText: string): string[] {
   const lines = hunkText.split('\n')
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   const header = lines[0] ?? ''
   const m = HUNK_RE.exec(header)
   if (!m) return [hunkText]
@@ -175,19 +232,29 @@ export function splitHunkText(hunkText: string): string[] {
 
   const oldStart = Number(m[1])
   const newStart = Number(m[3])
-  const count = (lines: string[], prefixes: string): number =>
-    lines.reduce((n, l) => n + (prefixes.includes(l[0] ?? '') ? 1 : 0), 0)
+  const count = (ls: string[], pred: (l: string) => boolean): number =>
+    ls.reduce((n, l) => n + (pred(l) ? 1 : 0), 0)
 
   return groups.map((g) => {
     const first = g[0]!
     const last = g[g.length - 1]!
-    const start = first - Math.min(3, first)
-    const end = Math.min(body.length, last + 4)
+    // Context = consecutive unchanged lines directly adjacent to the group,
+    // capped at 3; a change or marker line bounds the run, so pieces never
+    // cross into a neighboring group's changes. A blank line is an empty
+    // context line and counts toward both sides.
+    const isCtx = (l: string): boolean => l === '' || l.startsWith(' ')
+    let start = first
+    for (let ctx = 0; ctx < 3 && start > 0 && isCtx(body[start - 1]!); ctx++) start--
+    let end = last + 1
+    for (let ctx = 0; ctx < 3 && end < body.length && isCtx(body[end]!); ctx++) end++
+    // A "\ No newline at end of file" marker directly after the piece's last
+    // line belongs to the piece but counts toward neither side.
+    if (end < body.length && body[end]!.startsWith('\\')) end++
     const pieceBody = body.slice(start, end)
-    const oldCount = count(pieceBody, ' -')
-    const newCount = count(pieceBody, ' +')
-    const oldPos = oldStart === 0 ? 0 : oldStart + count(body.slice(0, start), ' -')
-    const newPos = newStart === 0 ? 0 : newStart + count(body.slice(0, start), ' +')
+    const oldCount = count(pieceBody, (l) => isCtx(l) || l.startsWith('-'))
+    const newCount = count(pieceBody, (l) => isCtx(l) || l.startsWith('+'))
+    const oldPos = oldStart === 0 ? 0 : oldStart + count(body.slice(0, start), (l) => isCtx(l) || l.startsWith('-'))
+    const newPos = newStart === 0 ? 0 : newStart + count(body.slice(0, start), (l) => isCtx(l) || l.startsWith('+'))
     return `@@ -${oldPos},${oldCount} +${newPos},${newCount} @@\n${pieceBody.join('\n')}`
   })
 }

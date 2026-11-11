@@ -1110,3 +1110,73 @@ original requirements above remain in force unless noted.
   Live proof: `env -i PATH=<node-only>` boot prints the three WARNINGs +
   note and serves `/api/health` with `tmuxReachable:false` instead of
   dying with `spawn tmux ENOENT`.
+
+### 2026-11-11: audit remediation — all 12 P2 findings (F01–F12)
+
+- Changed (diff parser, `server/hunks.ts`): **F01** `--- `/`+++ ` lines are
+  file headers only while no hunk is open — hunk-content lookalikes
+  (`++ unexpected-path`) can no longer rewrite file identity. **F06** the
+  `/dev/null` sentinel is ignored (deleted/added files keep the name from
+  `diff --git`), and new `unquoteGitPath()` decodes Git's C-style quoted
+  paths (`"caf\303\251.txt"` → `café.txt`) so parsed paths match porcelain
+  status and rebuilt patches carry real bytes. **F05** `splitHunkText`
+  rewritten: before/after context spans only consecutive unchanged lines
+  (cap 3), never crossing a neighboring group's changes; `\ No newline`
+  markers attach without counting; each piece's `@@` positions/counts are
+  recomputed from its body — pieces now apply cleanly and never overlap.
+- Changed (git adapter, `server/adapters/git.ts`): **F02** every add/unstage
+  path becomes `:(literal)<path>` — a file literally named `*.txt` or
+  `foo[1].txt` acts on itself only, never on globbed bystanders. **F08**
+  `unstagePaths` probes `rev-parse --verify --quiet HEAD`; on unborn HEAD it
+  stages-back via `git rm --cached -- :(literal)…`, so Restore works before
+  the first commit (worktree content kept).
+- Changed (mutation queue, `server/services/management.ts`): **F03**
+  conflicted paths are out of `addPending`'s allowed set — any selection
+  touching a conflict rejects whole with "paths have unresolved merge
+  conflicts; resolve them first" and the index stays untouched (INV-07).
+  **F04** `addPending`/`unstagePending`/`commitWorktree`/`hunkAction`
+  re-resolve the worktree from `discovery.worktreeTargets()` *inside* the
+  per-target lock and throw `target_not_found` if it stopped being managed
+  while queued — queued writes no longer execute on pre-lock authorization
+  (INV-01).
+- Changed (terminal hub, `server/services/terminal.ts`): **F09** everything
+  after the capacity reservation runs in a generation-aware try/catch; a
+  mid-attach rejection (`listPanes`, `createOwnedGroupedSession`) releases
+  the inflight slot and kills any owned session already created, so
+  `maxOwnedTerminals` can never be permanently consumed by a failed attach
+  (INV-04).
+- Changed (sweep evidence, `server/adapters/sweep-git.ts`): **F10**
+  `removed()` accepts only `rev-parse --verify --quiet` exit 0 (present) or
+  1 (verified absent); exit ≥2 throws "cannot confirm branch state after
+  removal (…)" instead of proving removal from a failed query (INV-06).
+- Changed (security, `server/security.ts`): **F11** `SAFE_HOSTNAMES`/
+  `MUTATION_METHODS` are `Set`s — inherited `Object` keys (`constructor:3000`,
+  `__proto__`) no longer pass the Host allowlist or the mutation gate.
+  **F12** `originMatches` compares scheme as well as authority: the trusted
+  scheme is `http:` (plain-HTTP server, no TLS termination supported), so
+  `https:` Origins are rejected — SPEC §2's "scheme+host+port" is now true
+  in code.
+- Changed (diff UI, `src/features/worktrees/DiffView.tsx`): **F07** the
+  post-mutation refetch preserves local staged/split/skip bookkeeping for
+  hunks still present (staging never changes WIP-vs-HEAD hunk identity)
+  instead of clearing it, so the per-hunk Undo affordance survives the
+  refresh after stage/unstage; initial load, mode switch, and worktree
+  change still clear everything.
+- Why: `docs/audits/2026-11-11-project-audit.md`; every finding was
+  re-verified against HEAD `a05a590` before fixing.
+- Verification: +30 vitest (526 → **556**, 46 files): hunks 7→20 (header
+  lookalikes, /dev/null, unicode quotes, piece isolation + count contract,
+  blank-context counting, terminal-newline artifact — review follow-up: the
+  artifact `''` after the final newline was being pushed as phantom
+  context, inflating `@@` counts and making the last piece of a split hunk
+  fail `git apply`; fixed at parse + split layers, proven end-to-end by
+  staging both pieces of a blank-context split hunk to a real git index),
+  git adapter +5 (literal pathspec stage/unstage, unborn stage/unstage),
+  security +3 (prototype-key hosts/methods, https-Origin rejection),
+  sweep-git +1 (failed query ≠ absence), management +4 (conflict refusal,
+  mixed selection, in-lock vanish for add + hunk), terminal hub +2
+  (reservation freed on mid-attach rejection ×2), DiffView +2 (Undo present
+  after post-stage refetch; prune when the hunk vanishes). SPEC §2
+  rewritten to match code (Host = hostname comparison; http:-only trusted
+  scheme) and INV-01/04/06/07 wording tightened. Gate: typecheck ✓,
+  556/46 ✓, build ✓, Playwright e2e 47 ✓.

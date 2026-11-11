@@ -169,6 +169,40 @@ describe('DiffView', () => {
     await waitFor(() => expect(mockApi.diff).toHaveBeenCalledTimes(2))
   })
 
+  it('keeps the staged-hunk undo affordance across the post-stage refetch', async () => {
+    mockApi.hunkAction.mockResolvedValue({ ok: true, snapshotStale: false })
+    renderView()
+    await screen.findByText('src/a.ts')
+    fireEvent.click(screen.getByRole('button', { name: 'Stage hunks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stage' }))
+    await waitFor(() => expect(mockApi.diff).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stage' })).not.toBeInTheDocument()
+  })
+
+  it('drops staged bookkeeping when a refetch no longer contains that hunk', async () => {
+    mockApi.hunkAction.mockResolvedValue({ ok: true, snapshotStale: false })
+    const moved: DiffResponse = {
+      ...wipDiff,
+      files: [
+        {
+          ...wipDiff.files[0]!,
+          path: 'src/b.ts',
+          hunks: wipDiff.files[0]!.hunks.map((h) => ({ ...h, file: 'src/b.ts' })),
+        },
+      ],
+    }
+    renderView()
+    await screen.findByText('src/a.ts')
+    mockApi.diff.mockResolvedValueOnce(moved)
+    fireEvent.click(screen.getByRole('button', { name: 'Stage hunks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stage' }))
+    await waitFor(() => expect(mockApi.diff).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('src/b.ts')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stage' })).toBeInTheDocument()
+  })
+
   it('shows reload notice and refetches when snapshot is stale', async () => {
     mockApi.hunkAction.mockResolvedValue({ ok: false, snapshotStale: true })
     renderView()

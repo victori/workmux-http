@@ -60,6 +60,10 @@ Statuses below reflect existing completion records, not new live verification.
 
 ## Decisions and audits
 
+- [Project defect review, 2026-11-11](audits/2026-11-11-project-audit.md):
+  complete; twelve reproduced defects, including hunk/index integrity and
+  queued-target validation. All twelve fixed; see the
+  [plan amendment](superpowers/plans/2026-11-07-workmux-http-dashboard.md#2026-11-11-audit-remediation--all-12-p2-findings-f01f12).
 - [Project audit, 2026-11-10](audits/2026-11-10-project-audit.md): complete;
   eight open reproduced defects and seven improvement opportunities. Full
   verification gate passes; remediation is not implemented.

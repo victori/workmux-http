@@ -27,6 +27,17 @@ describe('host allowlist', () => {
     expect(hostAllowed(undefined, cfg)).toBe(false)
   })
 
+  test('should reject inherited Object property names as hostnames', () => {
+    expect(hostAllowed('constructor:3000', cfg)).toBe(false)
+    expect(hostAllowed('__proto__:3000', cfg)).toBe(false)
+    expect(hostAllowed('toString:3000', cfg)).toBe(false)
+  })
+
+  test('should reject non-mutation method names that are prototype keys', () => {
+    // A `constructor` "method" must not be treated as a mutation either.
+    expect(checkRequest(req('constructor', { host: 'localhost:3000' }), cfg).ok).toBe(true)
+  })
+
   test('should accept any host with WORKMUX_ALLOWED_HOSTS=*', () => {
     const open: AppConfig = { ...cfg, allowAnyHost: true }
     expect(hostAllowed('evil.example.com', open)).toBe(true)
@@ -59,6 +70,17 @@ describe('origin checks', () => {
     expect(
       originMatches(req('POST', { host: 'localhost:3000', origin: 'http://localhost:8080' }), cfg),
     ).toBe(false)
+  })
+
+  test('should reject https Origin against the plain-HTTP server', () => {
+    expect(
+      originMatches(req('POST', { host: 'localhost:3000', origin: 'https://localhost:3000' }), cfg),
+    ).toBe(false)
+    const verdict = checkRequest(
+      req('POST', { host: 'localhost:3000', origin: 'https://localhost:3000', 'x-workmux-request': '1' }),
+      cfg,
+    )
+    expect(verdict).toMatchObject({ ok: false, status: 403, error: 'cross_origin' })
   })
 
   test('should reject WS upgrade from foreign local origin', () => {

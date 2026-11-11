@@ -109,7 +109,9 @@ as a clean worktree.
 - **Not a public, multi-user service.** There is no app authentication or
   per-user authorization. Anyone able to reach the allowed endpoint is inside
   the trust boundary; Host/Origin checks do not replace a VPN or access control.
-  Do not expose it directly to the public internet.
+  Origin checks compare scheme+host+port against the plain-HTTP server, so
+  `https:` Origins are rejected — terminate TLS elsewhere only if you also
+  rewrite `Origin`. Do not expose it directly to the public internet.
 
 ## Quick start
 
@@ -291,8 +293,10 @@ protection).
   merge behind exact-target confirm.
   WIP mode additionally lists **pending changes** — untracked, unstaged, and
   staged files, with per-file *Add* / *Restore* and *Add all* / *Restore all*
-  (Restore = unstage via `git restore --staged`; file content is always kept;
-  conflicts listed, never auto-added, never restorable here). A file's button
+  (Restore = unstage — `git restore --staged`, or `git rm --cached` before
+  the first commit, so Restore works on unborn repos too; file content is
+  always kept; conflicts are listed for awareness but the Add path rejects
+  them — resolve conflicts first). A file's button
   flips Add ↔ Restore as its staged state changes.
   — and, when `WORKMUX_<KIND>_COMMIT_CMD` is configured for the worktree's
   agent kind, a **Commit now** box: optional message input (empty = the
@@ -401,7 +405,7 @@ Design decisions worth knowing:
 
 ## Verification
 
-- `npm run test` — 526 vitest tests (unit + jsdom component + real-tmux
+- `npm run test` — 556 vitest tests (unit + jsdom component + real-tmux
   integration on disposable sockets incl. terminal geometry audit,
   real-git hunk staging, path staging, the configurable commit runner,
   push against a local bare remote incl. first-push, drift re-confirmation,

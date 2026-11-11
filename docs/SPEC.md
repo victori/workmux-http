@@ -47,11 +47,19 @@ request gates run as a `preHandler` hook, classified by
 `req.routeOptions.url` (router-resolved, so percent-encoded prefixes cannot
 skip them):
 
-1. **Host allowlist** — `Host` must match `WORKMUX_ALLOWED_HOSTS`
-   (port-exact comparison). `*` opt-in (`cfg.allowAnyHost`) accepts any
-   Host and is DNS-rebinding exposed; never the default.
+1. **Host allowlist** — the `Host` header's **hostname** must be loopback,
+   equal the bind address, or listed in `WORKMUX_ALLOWED_HOSTS` (hostname
+   comparison; the port is not compared — the socket serves exactly one
+   port, so the port in `Host` is the bound port by construction). `*`
+   opt-in (`cfg.allowAnyHost`) accepts any Host and is DNS-rebinding
+   exposed; never the default. Allowlist membership uses a `Set`, so
+   inherited `Object` keys (`constructor`, `__proto__`) are never allowed.
 2. **Origin check** — for requests carrying `Origin`, scheme+host+port must
-   equal the request target (port-exact).
+   equal the request target (port-exact). The server speaks plain HTTP and
+   supports no TLS termination, so the trusted scheme is `http:`; an
+   `https:` Origin never matches and mutations from it are rejected
+   (TLS-terminating proxies would have to rewrite `Origin`, which is not a
+   supported deployment).
 3. **Mutation header** — every non-GET `/api/*` requires
    `x-workmux-request: 1` (blocks simple cross-site form/CORS-less posts).
 
@@ -127,7 +135,10 @@ stale is not an HTTP error.
 
 <!-- check:invariants -->
 1. **INV-01 — Managed-only targets**: mutations revalidate ids against
-   `discovery.agentTargets()` / `worktreeTargets()` at execution time.
+   `discovery.agentTargets()` / `worktreeTargets()` at execution time —
+   inside the per-target lock, so an id that stopped being managed while the
+   operation queued fails with `target_not_found` instead of executing on
+   stale authorization.
 2. **INV-02 — Single-use confirm tokens**: consumed synchronously and
    checked for expiry at execute; the state key is re-evaluated inside the
    lock. Execute never trusts prepare-time state.
@@ -139,14 +150,21 @@ stale is not an HTTP error.
    grouped sessions `wmhttp-adv-*` marked `@wmhttp_owned`; cleanup
    double-checks the marker. Explicit confirmed Terminal resize is the
    documented exception and affects all clients of the shared window.
+   Terminal capacity reservations release on every path — success,
+   validation failure, mid-attach rejection, disconnect — and a session
+   created before a later failure is killed.
 5. **INV-05 — Never auto-retry ambiguous delivery** (`UnknownDeliveryError` →
    `delivery_unknown` 502).
 6. **INV-06 — Degrade, never fabricate**: source failure ⇒ last-good + `stale`
-   markers; empty data only when genuinely empty. Optional GitHub PR/CI
+   markers; empty data only when genuinely empty. A failed safety query is
+   unknown, never absence: e.g. sweep branch confirmation accepts only
+   `rev-parse --verify --quiet` exit 0 (present) or 1 (verified absent);
+   any other exit throws instead of proving removal. Optional GitHub PR/CI
    failure is disclosed on the PR/CI component only — it never marks core
    sources failed and never claims the tmux connection is offline.
-7. **INV-07 — Conflicts are awareness-only**: `u` paths listed, never auto-added,
-   never restorable via unstage.
+7. **INV-07 — Conflicts are awareness-only**: `u` paths listed, never
+   stageable by the add path (conflicted paths are rejected as offenders
+   before anything stages), never auto-added, never restorable via unstage.
 8. **INV-08 — Repo-controlled revisions gated by `SAFE_REV`** before any diff/
    merge of attacker-influenced refs.
 9. **INV-09 — Stale writes blocked**: hunk ops carry `snapshotId`; superseded ⇒
@@ -330,7 +348,7 @@ the visible viewport, never the expanded grid.
 | `WORKMUX_HTTP_BIND` | `127.0.0.1` | listen address; wildcard refused without opt-in |
 | `WORKMUX_HTTP_PORT` | `3000` | listen port |
 | `WORKMUX_HTTP_ALLOW_WILDCARD` | unset | `1` permits wildcard bind (Host allowlist still enforced) |
-| `WORKMUX_ALLOWED_HOSTS` | `localhost` | comma Host allowlist, port-exact; `*` = any (dangerous) |
+| `WORKMUX_ALLOWED_HOSTS` | `localhost` | comma Host allowlist (hostnames); `*` = any (dangerous) |
 | `WORKMUX_TMUX_SOCKET` | tmux default socket | explicit socket path |
 | `WORKMUX_REPOS` | none | extra repo paths for discovery |
 | `WORKMUX_HTTP_FIXTURES` | none | fixture mode from a fixtures dir (no live tmux/workmux; terminal refuses) |

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
@@ -234,6 +234,15 @@ describe('SweepGit.removed', () => {
   test('should report unconfirmed removal while the directory remains', async () => {
     const still = await new SweepGit().removed(view(), true)
     expect(still).toBe(false)
+  })
+
+  test('should throw instead of confirming when the branch query itself fails', async () => {
+    // Directory gone AND the query cwd is not a git repository: rev-parse
+    // exits 128 — that is failed inspection, NOT verified branch absence.
+    const nonRepo = path.join(sandbox, 'not-a-repo')
+    mkdirSync(nonRepo)
+    const gone = view({ path: path.join(sandbox, 'removed-wt'), projectPath: nonRepo })
+    await expect(new SweepGit().removed(gone, false)).rejects.toThrow(/cannot confirm branch state/)
   })
 })
 

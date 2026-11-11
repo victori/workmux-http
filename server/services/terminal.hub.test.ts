@@ -227,3 +227,74 @@ describe('TerminalHub attach lifecycle (audit F04)', () => {
     expect(attached.length).toBe(1) // the stale attach was cancelled by the newer generation
   })
 })
+
+describe('TerminalHub capacity release on mid-attach rejection (audit F09)', () => {
+  const inflightOf = (h: InstanceType<typeof TerminalHub>) => {
+    // Test seam: the reservation set is private; tests must observe it directly.
+    const internals = h as unknown as { inflight: Set<WebSocket> }
+    return internals.inflight
+  }
+
+  it('frees the reservation when listPanes rejects so a later attach succeeds at the limit', async () => {
+    let panesBroken = true
+    const tmux = {
+      ...fakeTmux(() => '%9'),
+      listPanes: async () => {
+        if (panesBroken) {
+          panesBroken = false
+          throw new Error('tmux is down')
+        }
+        return [pane]
+      },
+    } as unknown as TmuxLike
+    const h = new TerminalHub(
+      loadConfig({ WORKMUX_HTTP_MAX_OWNED_TERMINALS: '1' }),
+      tmux,
+      discoveryStub,
+    )
+    const ws1 = fakeSocket()
+    await h.handle(ws1 as unknown as WebSocket, { type: 'attach', agentId: '%1', cols: 80, rows: 24 })
+    expect(ws1.sent.some((m) => m.type === 'error' && m.error === 'tmux is down')).toBe(true)
+    expect(inflightOf(h).size).toBe(0)
+
+    // Capacity was released: the very next attach must not hit the limit.
+    const ws2 = fakeSocket()
+    await h.handle(ws2 as unknown as WebSocket, { type: 'attach', agentId: '%1', cols: 80, rows: 24 })
+    expect(ws2.sent.some((m) => m.type === 'error' && /limit reached/.test(m.error))).toBe(false)
+    expect(ws2.sent.some((m) => m.type === 'attached')).toBe(true)
+    expect(inflightOf(h).size).toBe(0)
+  })
+
+  it('frees the reservation and kills the partially created session when createOwnedGroupedSession rejects', async () => {
+    const attempted: string[] = []
+    const killed: string[] = []
+    const tmux = {
+      ...fakeTmux(() => '%9'),
+      createOwnedGroupedSession: async (name: string) => {
+        attempted.push(name)
+        if (attempted.length === 1) throw new Error('tmux create failed')
+      },
+      killOwnedSession: async (name: string) => {
+        killed.push(name)
+      },
+    } as unknown as TmuxLike
+    const h = new TerminalHub(
+      loadConfig({ WORKMUX_HTTP_MAX_OWNED_TERMINALS: '1' }),
+      tmux,
+      discoveryStub,
+    )
+    const ws1 = fakeSocket()
+    await h.handle(ws1 as unknown as WebSocket, { type: 'attach', agentId: '%1', cols: 80, rows: 24 })
+    expect(ws1.sent.some((m) => m.type === 'error' && m.error === 'tmux create failed')).toBe(true)
+    expect(inflightOf(h).size).toBe(0)
+    // Cleanup targeted exactly the session whose creation failed — no orphan,
+    // and nothing that was never created.
+    expect(killed).toEqual(attempted)
+    expect(attempted.length).toBe(1)
+
+    const ws2 = fakeSocket()
+    await h.handle(ws2 as unknown as WebSocket, { type: 'attach', agentId: '%1', cols: 80, rows: 24 })
+    expect(ws2.sent.some((m) => m.type === 'attached')).toBe(true)
+    expect(inflightOf(h).size).toBe(0)
+  })
+})

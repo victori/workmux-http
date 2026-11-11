@@ -171,11 +171,16 @@ export class SweepGit implements SweepGitLike {
     const branch = worktree.branch
     if (branch === null || !SAFE_REV.test(branch)) return dirGone
     const queryCwd = dirGone ? worktree.projectPath : canonicalPath
-    const exists = await git(queryCwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
-      .then((r) => r.code === 0)
-      .catch(() => {
-        throw new Error('cannot confirm branch state after removal')
-      })
+    // `rev-parse --verify --quiet` exit codes: 0 = ref exists, 1 = verified
+    // absent, >=2 = inspection failed (not a repo, corrupt, spawn error).
+    // Only 0/1 are proof; anything else must surface as unknown.
+    const res = await git(queryCwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).catch(() => null)
+    if (res === null || res.code >= 2) {
+      throw new Error(
+        `cannot confirm branch state after removal${res ? ` (git exit ${res.code}: ${res.err.trim()})` : ''}`,
+      )
+    }
+    const exists = res.code === 0
     return dirGone && exists === keepBranches
   }
 }

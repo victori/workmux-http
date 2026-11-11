@@ -163,11 +163,16 @@ export class Management {
 
   /**
    * Stage untracked/unstaged paths after revalidating them against a fresh
-   * status; client-supplied lists are never trusted.
+   * status; client-supplied lists are never trusted. Conflicted paths are
+   * never stageable here — `git add` on one would record the unresolved
+   * conflict content as resolved. The target is re-resolved in-lock so a
+   * request queued behind another client's lock can never execute against a
+   * worktree that stopped being managed (managed-only at execution time).
    */
   async addPending(targetId: string, paths: string[]): Promise<AddResult> {
-    const wt = (await this.discovery.worktreeTargets()).get(targetId)
-    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    if (!(await this.discovery.worktreeTargets()).has(targetId)) {
+      throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    }
     const malformed = paths.filter(
       (p) => p.trim() === '' || p.startsWith('-') || p.split('/').includes('..'),
     )
@@ -175,14 +180,24 @@ export class Management {
       return { ok: false, message: 'invalid paths', offenders: malformed }
     }
     return this.locked(targetId, async () => {
-      const status = await git.repoStatus(wt.path)
-      const pending = new Set([...status.untracked, ...status.unstaged, ...status.conflicts])
+      const fresh = (await this.discovery.worktreeTargets()).get(targetId)
+      if (!fresh) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+      const status = await git.repoStatus(fresh.path)
+      const conflicted = paths.filter((p) => status.conflicts.includes(p))
+      if (conflicted.length > 0) {
+        return {
+          ok: false,
+          message: 'paths have unresolved merge conflicts; resolve them first',
+          offenders: conflicted,
+        }
+      }
+      const pending = new Set([...status.untracked, ...status.unstaged])
       const offenders = paths.filter((p) => !pending.has(p))
       if (offenders.length > 0) {
         return { ok: false, message: 'paths are no longer pending; refresh and retry', offenders }
       }
-      await git.addPaths(wt.path, paths)
-      this.discovery.invalidateRepo(wt.path)
+      await git.addPaths(fresh.path, paths)
+      this.discovery.invalidateRepo(fresh.path)
       return { ok: true }
     })
   }
@@ -193,8 +208,9 @@ export class Management {
    * against a fresh status, offenders reported instead of fabricated.
    */
   async unstagePending(targetId: string, paths: string[]): Promise<AddResult> {
-    const wt = (await this.discovery.worktreeTargets()).get(targetId)
-    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    if (!(await this.discovery.worktreeTargets()).has(targetId)) {
+      throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    }
     const malformed = paths.filter(
       (p) => p.trim() === '' || p.startsWith('-') || p.split('/').includes('..'),
     )
@@ -202,13 +218,15 @@ export class Management {
       return { ok: false, message: 'invalid paths', offenders: malformed }
     }
     return this.locked(targetId, async () => {
-      const status = await git.repoStatus(wt.path)
+      const fresh = (await this.discovery.worktreeTargets()).get(targetId)
+      if (!fresh) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+      const status = await git.repoStatus(fresh.path)
       const offenders = paths.filter((p) => !status.staged.includes(p))
       if (offenders.length > 0) {
         return { ok: false, message: 'paths are not staged; refresh and retry', offenders }
       }
-      await git.unstagePaths(wt.path, paths)
-      this.discovery.invalidateRepo(wt.path)
+      await git.unstagePaths(fresh.path, paths)
+      this.discovery.invalidateRepo(fresh.path)
       return { ok: true }
     })
   }
@@ -219,18 +237,21 @@ export class Management {
    * tools can run long).
    */
   async commitWorktree(targetId: string, message: string): Promise<OperationView> {
-    const wt = (await this.discovery.worktreeTargets()).get(targetId)
-    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    if (!(await this.discovery.worktreeTargets()).has(targetId)) {
+      throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    }
     const cmd = await this.commitCmdForWorktree(targetId)
     if (!cmd) throw new BadRequestError('commit_cmd_not_configured')
     return this.locked(targetId, async () => {
-      const st = await git.repoStatus(wt.path).catch(() => null)
+      const fresh = (await this.discovery.worktreeTargets()).get(targetId)
+      if (!fresh) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+      const st = await git.repoStatus(fresh.path).catch(() => null)
       if (st && st.pendingChanges === 0 && !st.unborn) {
         throw new BadRequestError('nothing_to_commit: worktree has no staged, unstaged, or untracked changes')
       }
       const argv = buildCommitArgv(cmd, message)
-      return this.operations.start('commit', wt.handle, async () => {
-        const r = await git.runCommit(wt.path, argv, this.cfg.commitTimeoutMs)
+      return this.operations.start('commit', fresh.handle, async () => {
+        const r = await git.runCommit(fresh.path, argv, this.cfg.commitTimeoutMs)
         const out = [r.stdout, r.stderr].filter(Boolean).join('\n').slice(-BOUNDS.maxCommitOutputBytes)
         if (r.code !== 0) return { output: out || null, error: `commit failed (exit ${r.code})` }
         return { output: out || 'committed' }
@@ -269,15 +290,18 @@ export class Management {
     action: 'stage' | 'unstage' | 'split',
     req: { snapshotId: string; file: string; hunkIndex: number; piece?: string },
   ): Promise<HunkActionResult> {
-    const wt = (await this.discovery.worktreeTargets()).get(targetId)
-    if (!wt) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    if (!(await this.discovery.worktreeTargets()).has(targetId)) {
+      throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+    }
     return this.locked(targetId, async () => {
-      const fresh = await git.diffWip(wt.path)
-      const freshId = snapshotId(`${wt.path}\u0000wip\u0000${fresh.files.map((f) => f.diff).join('\n')}`)
+      const fresh = (await this.discovery.worktreeTargets()).get(targetId)
+      if (!fresh) throw new TargetNotFoundError(`unknown worktree ${targetId}`)
+      const wip = await git.diffWip(fresh.path)
+      const freshId = snapshotId(`${fresh.path}\u0000wip\u0000${wip.files.map((f) => f.diff).join('\n')}`)
       if (freshId !== req.snapshotId) {
         return { ok: false, snapshotStale: true, message: 'diff changed since snapshot; reload and retry' }
       }
-      const file = fresh.files.find((f) => f.path === req.file)
+      const file = wip.files.find((f) => f.path === req.file)
       const hunk = file?.hunks[req.hunkIndex]
       if (!file || !hunk) {
         return { ok: false, snapshotStale: true, message: 'hunk no longer present; reload and retry' }
@@ -291,8 +315,8 @@ export class Management {
         return { ok: false, snapshotStale: true, message: 'piece does not match current hunk; reload and retry' }
       }
       const patch = buildHunkPatch({ path: file.path, oldPath: file.oldPath, status: file.status }, hunkText)
-      const applied = await git.applyToIndex(wt.path, patch, { reverse: action === 'unstage' })
-      this.discovery.invalidateRepo(wt.path)
+      const applied = await git.applyToIndex(fresh.path, patch, { reverse: action === 'unstage' })
+      this.discovery.invalidateRepo(fresh.path)
       if (!applied.ok) {
         return { ok: false, snapshotStale: false, message: applied.error ?? 'apply failed' }
       }

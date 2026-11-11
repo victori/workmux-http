@@ -62,18 +62,31 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
   const [commitBusy, setCommitBusy] = useState(false)
   const [commitError, setCommitError] = useState<string | null>(null)
 
-  const load = useCallback(() => {
+  const load = useCallback((opts?: { keepStaged?: boolean }) => {
     setLoading(true)
     setError(null)
     api
       .diff(worktreeId, mode, mode === 'commit' ? commit?.sha : undefined)
       .then((d) => {
         setDiff(d)
-        // fresh snapshot: local hunk bookkeeping no longer applies
-        setSkipped(new Set())
-        setStagedKeys(new Set())
-        setStagedPieces(new Set())
-        setPieces(new Map())
+        if (opts?.keepStaged) {
+          // Staging never changes WIP-vs-HEAD content, so hunk identity
+          // survives this refetch: keep local bookkeeping for hunks that are
+          // still present, drop the rest.
+          const present = new Set<string>()
+          for (const f of d.files) for (const h of f.hunks) present.add(hunkKey(f.path, h.index))
+          const keepPiece = (k: string) => [...present].some((pk) => k.startsWith(`${pk}:`))
+          setSkipped((prev) => new Set([...prev].filter((k) => present.has(k))))
+          setStagedKeys((prev) => new Set([...prev].filter((k) => present.has(k))))
+          setStagedPieces((prev) => new Set([...prev].filter(keepPiece)))
+          setPieces((prev) => new Map([...prev].filter(([k]) => present.has(k))))
+        } else {
+          // fresh snapshot: local hunk bookkeeping no longer applies
+          setSkipped(new Set())
+          setStagedKeys(new Set())
+          setStagedPieces(new Set())
+          setPieces(new Map())
+        }
         setSelected((prev) =>
           prev && d.files.some((f) => f.path === prev) ? prev : d.files[0]?.path ?? null,
         )
@@ -211,9 +224,9 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
     setMode(next)
   }
 
-  function refreshAfterNotice(message: string): void {
+  function refreshAfterNotice(message: string, keepStaged = false): void {
     setNotice(message)
-    load()
+    load({ keepStaged })
   }
 
   function stageWhole(file: string, hunkIndex: number): void {
@@ -226,7 +239,7 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
         if (r.snapshotStale) return refreshAfterNotice('diff changed, reloaded')
         if (!r.ok) return setNotice(r.message ?? 'stage failed')
         setStagedKeys((prev) => new Set(prev).add(key))
-        refreshAfterNotice('hunk staged')
+        refreshAfterNotice('hunk staged', true)
       })
       .catch((err: unknown) => setNotice(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusyHunk(null))
@@ -242,7 +255,7 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
         if (r.snapshotStale) return refreshAfterNotice('diff changed, reloaded')
         if (!r.ok) return setNotice(r.message ?? 'stage failed')
         setStagedPieces((prev) => new Set(prev).add(`${key}:${piece}`))
-        refreshAfterNotice('piece staged')
+        refreshAfterNotice('piece staged', true)
       })
       .catch((err: unknown) => setNotice(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusyHunk(null))
@@ -272,7 +285,7 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
           next.delete(`${key}:${piece}`)
           return next
         })
-        refreshAfterNotice('hunk unstaged')
+        refreshAfterNotice('hunk unstaged', true)
       })
       .catch((err: unknown) => setNotice(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusyHunk(null))
@@ -447,7 +460,7 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
             <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-err">{op.error}</pre>
           )}
           {op.state === 'done' && (
-            <button onClick={load} className="mt-1 rounded-md border border-line px-2 py-1 text-xs text-fg-muted hover:bg-surface">
+            <button onClick={() => load()} className="mt-1 rounded-md border border-line px-2 py-1 text-xs text-fg-muted hover:bg-surface">
               Reload diff
             </button>
           )}
@@ -523,7 +536,7 @@ export function DiffView({ worktreeId, label, onClose, connection, commit }: Dif
             <div className="space-y-2">
               <p className="rounded-lg border border-err/40 bg-err/10 px-3 py-2 text-sm text-err">{error}</p>
               <button
-                onClick={load}
+                onClick={() => load()}
                 className="rounded-lg border border-line px-3 py-2 text-sm text-fg-muted hover:bg-surface-2"
               >
                 Retry

@@ -105,102 +105,118 @@ export class TerminalHub {
     this.inflight.add(ws)
     const gen = (this.attachGen.get(ws) ?? 0) + 1
     this.attachGen.set(ws, gen)
-    const agent = (await this.discovery.agentTargets()).get(msg.agentId)
-    if (!agent) {
-      this.inflight.delete(ws)
-      throw new Error('target is not a managed agent')
-    }
-
-    const panes = await this.tmux.listPanes()
-    const pane = panes.find((p) => p.paneId === msg.agentId)
-    if (!pane || pane.dead) {
-      this.inflight.delete(ws)
-      throw new Error('agent pane no longer exists')
-    }
-    if (this.attachGen.get(ws) !== gen) {
-      // Socket closed or re-attached while dependencies resolved.
-      this.inflight.delete(ws)
-      return
-    }
-
-    const owned = `wmhttp-adv-${randomBytes(4).toString('hex')}`
-    await this.tmux.createOwnedGroupedSession(owned, pane.sessionName)
+    // From the reservation onward, every rejection path must release the slot,
+    // otherwise the owned-terminal limit stays permanently consumed.
+    let owned = ''
     try {
-      if (this.attachGen.get(ws) !== gen) {
-        await this.tmux.killOwnedSession(owned).catch(() => undefined)
+      const agent = (await this.discovery.agentTargets()).get(msg.agentId)
+      if (!agent) {
         this.inflight.delete(ws)
-        return
+        throw new Error('target is not a managed agent')
       }
-      // Grouped sessions share windows but keep independent current-window
-      // selection; selecting only in the owned session never moves the parent.
-      await this.tmux.selectWindow(owned, pane.windowIndex)
 
-      // Preserve shared geometry on entry: attach at a client size that keeps
-      // the window exactly as-is (window height + status row tmux reserves).
-      // A larger client request must NOT enlarge the window — that would
-      // resize the layout for every other tmux client.
-      const geo = await this.tmux.windowGeometry?.(pane.paneId).catch(() => null)
-      const cols = clamp(geo?.cols ?? pane.width, 20, 400) || 80
-      const rows = clamp(geo?.rows ?? pane.height + 1, 6, 200) || 24
-      const pty = spawn('tmux', ['-S', this.tmux.socket, 'attach-session', '-t', owned], {
-        name: 'xterm-256color',
-        cols,
-        rows,
-        env: { ...process.env, TERM: 'xterm-256color' },
-      })
-      pty.onData((data) => send({ type: 'output', data }))
-      // Full-session access, disclosed honestly: tmux focuses the window's
-      // active pane, which can be a different agent's pane than requested.
-      const active = (await this.tmux.activePane?.(`${owned}:${pane.windowIndex}`)) ?? null
-      const entry: OwnedTerminal = {
-        pty,
-        ownedSession: owned,
-        agentId: msg.agentId,
-        lastFitAt: 0,
-        activePaneId: active,
+      const panes = await this.tmux.listPanes()
+      const pane = panes.find((p) => p.paneId === msg.agentId)
+      if (!pane || pane.dead) {
+        this.inflight.delete(ws)
+        throw new Error('agent pane no longer exists')
       }
-      pty.onExit(({ exitCode }) => {
-        if (this.attached.get(ws)?.pty === pty) this.attached.delete(ws)
-        clearInterval(entry.paneWatchdog)
-        void this.tmux.killOwnedSession(owned).catch(() => undefined)
-        send({ type: 'detached', reason: `pty exited (${exitCode})` })
-      })
-      entry.paneWatchdog = setInterval(() => {
-        void (async () => {
-          if (this.attached.get(ws) !== entry) return
-          const now = await this.tmux.activePane?.(`${owned}:${pane.windowIndex}`).catch(() => null)
-          if (now && now !== entry.activePaneId) {
-            entry.activePaneId = now
-            send({ type: 'pane-changed', activePaneId: now })
-          }
-        })()
-      }, PANE_WATCHDOG_MS)
-      entry.paneWatchdog.unref?.()
       if (this.attachGen.get(ws) !== gen) {
-        // Socket closed or re-attached while the PTY was starting.
-        clearInterval(entry.paneWatchdog)
-        try {
-          pty.kill()
-        } catch {
-          /* already exited */
-        }
-        await this.tmux.killOwnedSession(owned).catch(() => undefined)
+        // Socket closed or re-attached while dependencies resolved.
         this.inflight.delete(ws)
         return
       }
-      this.inflight.delete(ws)
-      this.attached.set(ws, entry)
-      send({
-        type: 'attached',
-        agentId: msg.agentId,
-        sessionId: owned,
-        cols,
-        rows,
-        activePaneId: active,
-      })
+
+      owned = `wmhttp-adv-${randomBytes(4).toString('hex')}`
+      await this.tmux.createOwnedGroupedSession(owned, pane.sessionName)
+      try {
+        if (this.attachGen.get(ws) !== gen) {
+          await this.tmux.killOwnedSession(owned).catch(() => undefined)
+          this.inflight.delete(ws)
+          return
+        }
+        // Grouped sessions share windows but keep independent current-window
+        // selection; selecting only in the owned session never moves the parent.
+        await this.tmux.selectWindow(owned, pane.windowIndex)
+
+        // Preserve shared geometry on entry: attach at a client size that keeps
+        // the window exactly as-is (window height + status row tmux reserves).
+        // A larger client request must NOT enlarge the window — that would
+        // resize the layout for every other tmux client.
+        const geo = await this.tmux.windowGeometry?.(pane.paneId).catch(() => null)
+        const cols = clamp(geo?.cols ?? pane.width, 20, 400) || 80
+        const rows = clamp(geo?.rows ?? pane.height + 1, 6, 200) || 24
+        const pty = spawn('tmux', ['-S', this.tmux.socket, 'attach-session', '-t', owned], {
+          name: 'xterm-256color',
+          cols,
+          rows,
+          env: { ...process.env, TERM: 'xterm-256color' },
+        })
+        pty.onData((data) => send({ type: 'output', data }))
+        // Full-session access, disclosed honestly: tmux focuses the window's
+        // active pane, which can be a different agent's pane than requested.
+        const active = (await this.tmux.activePane?.(`${owned}:${pane.windowIndex}`)) ?? null
+        const entry: OwnedTerminal = {
+          pty,
+          ownedSession: owned,
+          agentId: msg.agentId,
+          lastFitAt: 0,
+          activePaneId: active,
+        }
+        pty.onExit(({ exitCode }) => {
+          if (this.attached.get(ws)?.pty === pty) this.attached.delete(ws)
+          clearInterval(entry.paneWatchdog)
+          void this.tmux.killOwnedSession(owned).catch(() => undefined)
+          send({ type: 'detached', reason: `pty exited (${exitCode})` })
+        })
+        entry.paneWatchdog = setInterval(() => {
+          void (async () => {
+            if (this.attached.get(ws) !== entry) return
+            const now = await this.tmux.activePane?.(`${owned}:${pane.windowIndex}`).catch(
+              () => null,
+            )
+            if (now && now !== entry.activePaneId) {
+              entry.activePaneId = now
+              send({ type: 'pane-changed', activePaneId: now })
+            }
+          })()
+        }, PANE_WATCHDOG_MS)
+        entry.paneWatchdog.unref?.()
+        if (this.attachGen.get(ws) !== gen) {
+          // Socket closed or re-attached while the PTY was starting.
+          clearInterval(entry.paneWatchdog)
+          try {
+            pty.kill()
+          } catch {
+            /* already exited */
+          }
+          await this.tmux.killOwnedSession(owned).catch(() => undefined)
+          this.inflight.delete(ws)
+          return
+        }
+        // Success: the slot moves from inflight to attached.
+        this.inflight.delete(ws)
+        this.attached.set(ws, entry)
+        send({
+          type: 'attached',
+          agentId: msg.agentId,
+          sessionId: owned,
+          cols,
+          rows,
+          activePaneId: active,
+        })
+      } catch (err) {
+        this.inflight.delete(ws)
+        await this.tmux.killOwnedSession(owned).catch(() => undefined)
+        owned = '' // session already cleaned up; outer handler must not re-kill
+        throw err
+      }
     } catch (err) {
-      this.inflight.delete(ws)
-      await this.tmux.killOwnedSession(owned).catch(() => undefined)
+      // A rejecting dependency must never strand the capacity reservation.
+      // If a close or newer attach took over the generation, that flow owns
+      // the slot now; an owned session created here still must not be orphaned.
+      if (this.attachGen.get(ws) === gen) this.inflight.delete(ws)
+      if (owned) void this.tmux.killOwnedSession(owned).catch(() => undefined)
       throw err
     }
   }

@@ -245,7 +245,8 @@ export async function applyToIndex(
 
 /** Stage exact paths (validated by the caller) untracked or unstaged alike. */
 export async function addPaths(cwd: string, paths: string[]): Promise<void> {
-  const res = await run(['git', 'add', '--', ...paths], { cwd })
+  // :(literal) forces exact-match pathspecs so names like `*.txt` never glob onto bystanders.
+  const res = await run(['git', 'add', '--', ...paths.map((p) => `:(literal)${p}`)], { cwd })
   if (res.code !== 0) {
     throw new Error(`git add failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
   }
@@ -253,9 +254,13 @@ export async function addPaths(cwd: string, paths: string[]): Promise<void> {
 
 /** Undo staging for exact paths (worktree content untouched). */
 export async function unstagePaths(cwd: string, paths: string[]): Promise<void> {
-  const res = await run(['git', 'restore', '--staged', '--', ...paths], { cwd })
+  const head = await run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], { cwd })
+  // restore needs HEAD; in an unborn repo every staged entry is new, so
+  // dropping it from the index (worktree kept) is exactly "unstage".
+  const op = head.code === 0 ? ['restore', '--staged'] : ['rm', '--cached']
+  const res = await run(['git', ...op, '--', ...paths.map((p) => `:(literal)${p}`)], { cwd })
   if (res.code !== 0) {
-    throw new Error(`git restore --staged failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
+    throw new Error(`git ${op.join(' ')} failed in ${cwd}: ${res.stderr.trim() || `exit ${res.code}`}`)
   }
 }
 

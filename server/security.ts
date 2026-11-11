@@ -9,8 +9,13 @@ export interface RequestLike {
   }
 }
 
-const SAFE_HOSTNAMES: Record<string, true> = { localhost: true, '127.0.0.1': true, '::1': true }
-const MUTATION_METHODS: Record<string, true> = { POST: true, PUT: true, PATCH: true, DELETE: true }
+// Set (not object literal): `in`/`in obj` would accept inherited prototype
+// keys like `constructor` and `__proto__` as allowed hosts/methods.
+const SAFE_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
+const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+// This server speaks plain HTTP; a TLS-terminating proxy is not supported,
+// so only http: Origins can be same-origin with the request target.
+const SERVED_SCHEME = 'http:'
 
 export function hostAllowed(hostHeader: string | undefined, cfg: AppConfig): boolean {
   if (!hostHeader) return false
@@ -21,16 +26,16 @@ export function hostAllowed(hostHeader: string | undefined, cfg: AppConfig): boo
     return false
   }
   if (cfg.allowAnyHost) return true
-  if (hostname in SAFE_HOSTNAMES) return true
+  if (SAFE_HOSTNAMES.has(hostname)) return true
   if (hostname === cfg.bind) return true
   return cfg.allowedHosts.includes(hostname)
 }
 
-function originAuthority(origin: string): string | null {
+function originParts(origin: string): { scheme: string; authority: string } | null {
   try {
     const u = new URL(origin)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
-    return u.host // host:port with scheme-default ports omitted
+    return { scheme: u.protocol, authority: u.host } // host:port with scheme-default ports omitted
   } catch {
     return null
   }
@@ -45,17 +50,17 @@ function requestAuthority(hostHeader: string): string | null {
   }
 }
 
-/** Same-origin check: Origin (when present) must match host AND port. */
+/** Same-origin check: Origin (when present) must match scheme, host AND port. */
 export function originMatches(req: RequestLike, cfg: AppConfig): boolean {
   const origin = req.headers.origin
   if (!origin) return true // non-browser clients send no Origin
   const host = req.headers.host
   if (!host) return false
-  const oa = originAuthority(origin)
+  const oa = originParts(origin)
   if (oa === null) return false
   const ra = requestAuthority(host)
   if (ra === null) return false
-  return oa === ra
+  return oa.scheme === SERVED_SCHEME && oa.authority === ra
 }
 
 export interface SecurityVerdict {
@@ -76,7 +81,7 @@ export function checkRequest(
   if (!hostAllowed(req.headers.host, cfg)) {
     return { ok: false, status: 403, error: 'forbidden_host' }
   }
-  const isMutation = req.method in MUTATION_METHODS || opts.upgrade === true
+  const isMutation = MUTATION_METHODS.has(req.method) || opts.upgrade === true
   if (!isMutation) return { ok: true }
   if (!originMatches(req, cfg)) {
     return { ok: false, status: 403, error: 'cross_origin' }

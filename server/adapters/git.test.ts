@@ -415,6 +415,84 @@ describe('staged paths and unstage round-trip', () => {
   })
 })
 
+describe('literal pathspec staging (audit F02)', () => {
+  let lit: string
+  const gitLit = (args: string[]): string => execFileSync('git', args, { cwd: lit, encoding: 'utf8' })
+  const staged = () => gitLit(['diff', '--cached', '--name-only']).trim().split('\n').filter(Boolean)
+
+  beforeAll(() => {
+    lit = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-literal-'))
+    gitLit(['init', '-q', '-b', 'main'])
+    gitLit(['config', 'user.email', 'test@test.local'])
+    gitLit(['config', 'user.name', 'Test'])
+    gitLit(['config', 'commit.gpgsign', 'false'])
+    writeFileSync(path.join(lit, 'base.txt'), 'x\n')
+    gitLit(['add', 'base.txt'])
+    gitLit(['commit', '-qm', 'init'])
+    writeFileSync(path.join(lit, '*.txt'), 'glob-named file\n')
+    writeFileSync(path.join(lit, 'bystander.txt'), 'must not be touched\n')
+    writeFileSync(path.join(lit, 'foo[1].txt'), 'exact bracket name\n')
+    writeFileSync(path.join(lit, 'foo1.txt'), 'bracket-expansion bystander\n')
+  })
+
+  afterAll(() => {
+    if (lit) rmSync(lit, { recursive: true, force: true })
+  })
+
+  test('should stage only the literal *.txt file without globbing bystanders', async () => {
+    await addPaths(lit, ['*.txt'])
+    expect(staged()).toEqual(['*.txt'])
+  })
+
+  test('should unstage only the literal *.txt file leaving a staged bystander alone', async () => {
+    await addPaths(lit, ['bystander.txt'])
+    expect(staged()).toEqual(['*.txt', 'bystander.txt'])
+    await unstagePaths(lit, ['*.txt'])
+    expect(staged()).toEqual(['bystander.txt'])
+    expect(existsSync(path.join(lit, '*.txt'))).toBe(true)
+  })
+
+  test('should stage foo[1].txt exactly without expanding to foo1.txt', async () => {
+    await addPaths(lit, ['foo[1].txt'])
+    expect(staged()).toEqual(['bystander.txt', 'foo[1].txt'])
+  })
+})
+
+describe('unstage before the first commit (audit F08)', () => {
+  let unborn: string
+  const gitU = (args: string[]): string => execFileSync('git', args, { cwd: unborn, encoding: 'utf8' })
+
+  beforeEach(() => {
+    unborn = mkdtempSync(path.join(os.tmpdir(), 'wmhttp-unborn-'))
+    gitU(['init', '-q', '-b', 'main'])
+    gitU(['config', 'user.email', 'test@test.local'])
+    gitU(['config', 'user.name', 'Test'])
+    gitU(['config', 'commit.gpgsign', 'false'])
+  })
+
+  afterEach(() => {
+    rmSync(unborn, { recursive: true, force: true })
+  })
+
+  test('should stage and unstage in an unborn repo without HEAD', async () => {
+    writeFileSync(path.join(unborn, 'first.txt'), 'hello\n')
+    await addPaths(unborn, ['first.txt'])
+    expect(gitU(['diff', '--cached', '--name-only']).trim()).toBe('first.txt')
+    await unstagePaths(unborn, ['first.txt'])
+    expect(gitU(['ls-files'])).toBe('')
+    expect(existsSync(path.join(unborn, 'first.txt'))).toBe(true)
+  })
+
+  test('should keep literal semantics when unstaging in an unborn repo', async () => {
+    writeFileSync(path.join(unborn, '*.txt'), 'glob-named\n')
+    writeFileSync(path.join(unborn, 'bystander.txt'), 'must stay staged\n')
+    await addPaths(unborn, ['*.txt', 'bystander.txt'])
+    await unstagePaths(unborn, ['*.txt'])
+    expect(gitU(['ls-files']).trim()).toBe('bystander.txt')
+    expect(existsSync(path.join(unborn, '*.txt'))).toBe(true)
+  })
+})
+
 describe('commit history', () => {
   let hist: string
   const gitH = (args: string[]): string => execFileSync('git', args, { cwd: hist, encoding: 'utf8' })
