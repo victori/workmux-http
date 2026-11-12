@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  workmux-http LaunchAgent template. Render placeholders (see deploy/README.md):
+    @NODE@    absolute node binary (>= v22), e.g. /opt/homebrew/bin/node
+    @APPDIR@  absolute repo checkout containing dist/server/index.js
+    @ENVFILE@ absolute path to your workmux-http.env
+    @BINDIR@  dir containing node + tmux + workmux + git (discovery shells out)
+    @LOGDIR@  writable log dir, e.g. ~/Library/Logs
+  LaunchAgents run in your GUI login session; the dashboard needs your
+  per-user tmux socket, so a LaunchDaemon is intentionally NOT provided.
+  @APPDIR@ must NOT be under ~/Desktop, ~/Documents, or ~/Downloads:
+  background jobs are denied those folders by macOS TCC without a prompt.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.workmux.http</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart on any exit; ThrottleInterval bounds retry rate when the
+       port is held by a stray instance (the server exits 1 on EADDRINUSE
+       with an explicit message in the log). -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>WorkingDirectory</key>
+  <string>@APPDIR@</string>
+
+  <!-- launchd has no EnvironmentFile; source the env file, then exec node
+       so launchd owns the server process directly. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; . @ENVFILE@; exec @NODE@ dist/server/index.js</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@BINDIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>@LOGDIR@/workmux-http.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOGDIR@/workmux-http.log</string>
+</dict>
+</plist>

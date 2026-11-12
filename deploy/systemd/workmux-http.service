@@ -1,0 +1,36 @@
+# workmux-http systemd system unit template. Render placeholders (see
+# deploy/README.md):
+#   @NODE@    absolute node binary (>= v22)
+#   @APPDIR@  absolute repo checkout containing dist/server/index.js
+#   @USER@    operator account that owns the tmux socket + repos
+#   @ENVFILE@ absolute path to your workmux-http.env
+#   @BINDIR@  dir containing node + tmux + workmux + git
+# Install as /etc/systemd/system/workmux-http.service (root), then
+# `systemctl daemon-reload && systemctl enable --now workmux-http`.
+
+[Unit]
+Description=workmux-http agent dashboard
+Documentation=file://@APPDIR@/docs/SPEC.md
+After=network-online.target
+Wants=network-online.target
+# A duplicate instance exits 1 on EADDRINUSE; back off instead of spinning.
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+# The dashboard drives the operator's per-user tmux socket and repos, so it
+# runs as that user — not root.
+User=@USER@
+WorkingDirectory=@APPDIR@
+EnvironmentFile=@ENVFILE@
+Environment=PATH=@BINDIR@:/usr/local/bin:/usr/bin:/bin
+ExecStart=@NODE@ dist/server/index.js
+Restart=always
+RestartSec=5
+# Hardening intentionally minimal: the service must reach the operator's
+# tmux socket, working copies, and tool PATH (tmux/workmux/git/gh).
+# ProtectHome, PrivateTmp, or a read-only root would break exactly those.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# workmux_http — workmux-http agent dashboard (FreeBSD rc.d).
+#
+# Install as /usr/local/etc/rc.d/workmux_http (filename must match PROVIDE
+# for rcorder; underscores because rc.conf keys must be shell identifiers).
+# Render placeholders (see deploy/README.md):
+#   @NODE@    absolute node binary (>= v22)
+#   @APPDIR@  absolute repo checkout containing dist/server/index.js
+#   @USER@    operator account that owns the tmux socket + repos
+#   @ENVFILE@ absolute path to your workmux-http.env
+#   @BINDIR@  dir containing node + tmux + workmux + git
+# Enable in /etc/rc.conf:
+#   workmux_http_enable="YES"
+# and optionally override any of: workmux_http_user/_dir/_env/_node/_path.
+#
+# PROVIDE: workmux_http
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name=workmux_http
+rcvar=workmux_http_enable
+
+load_rc_config $name
+
+: "${workmux_http_enable:=NO}"
+: "${workmux_http_user:=@USER@}"
+: "${workmux_http_dir:=@APPDIR@}"
+: "${workmux_http_env:=@ENVFILE@}"
+: "${workmux_http_node:=@NODE@}"
+: "${workmux_http_path:=@BINDIR@:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin}"
+: "${workmux_http_log:=/var/log/workmux_http.log}"
+
+pidfile=/var/run/workmux_http.pid
+
+# daemon(8) drops to the operator user (the dashboard needs that user's tmux
+# socket + repos) and records the server pid for stop. The wrapper sets the
+# env file and PATH, then exec's node so the pid is the server itself;
+# output is appended to the log file (no respawn on FreeBSD — a crash
+# requires `service workmux_http restart` or an external watchdog).
+command=/usr/sbin/daemon
+command_args="-u ${workmux_http_user} -p ${pidfile} /bin/sh -c 'cd ${workmux_http_dir} && set -a; . ${workmux_http_env}; PATH=${workmux_http_path} exec ${workmux_http_node} dist/server/index.js >> ${workmux_http_log} 2>&1'"
+
+run_rc_command "$1"

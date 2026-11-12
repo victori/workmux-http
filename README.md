@@ -122,6 +122,9 @@ npm run build
 npm start                                                 # http://127.0.0.1:3000
 ```
 
+To run it unattended as an OS service (launchd / systemd / FreeBSD rc.d),
+see [`deploy/README.md`](deploy/README.md).
+
 Dev mode (API watch + Vite with `/api` + WS proxy):
 
 ```sh
